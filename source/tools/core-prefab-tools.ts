@@ -1,4 +1,3 @@
-// v1.5 core prefab tools: action-based facade.
 import { ToolDefinition, ToolExecutor, ToolResponse } from '../types';
 import { PrefabTools } from './prefab-tools';
 import { SceneAdvancedTools } from './scene-advanced-tools';
@@ -16,7 +15,6 @@ export class PrefabCoreTools implements ToolExecutor {
             load: { executor: this.prefab, method: 'load_prefab' }
         },
         lifecycle: {
-            create: { executor: this.prefab, method: 'create_prefab' },
             update: { executor: this.prefab, method: 'update_prefab' },
             duplicate: { executor: this.prefab, method: 'duplicate_prefab' }
         },
@@ -32,26 +30,10 @@ export class PrefabCoreTools implements ToolExecutor {
 
     getTools(): ToolDefinition[] {
         return [
-            {
-                name: 'browse',
-                description: 'Browse and inspect prefabs',
-                inputSchema: buildActionSchema(Object.keys(this.actions.browse), 'Parameters for the selected action')
-            },
-            {
-                name: 'lifecycle',
-                description: 'Prefab create/update/duplicate',
-                inputSchema: buildActionSchema(Object.keys(this.actions.lifecycle), 'Parameters for the selected action')
-            },
-            {
-                name: 'instance',
-                description: 'Prefab instantiation and revert',
-                inputSchema: buildActionSchema(Object.keys(this.actions.instance), 'Parameters for the selected action')
-            },
-            {
-                name: 'edit',
-                description: 'Prefab edit operations',
-                inputSchema: buildActionSchema(Object.keys(this.actions.edit), 'Parameters for the selected action')
-            }
+            { name: 'browse', description: 'Browse and inspect prefabs', inputSchema: buildActionSchema(this.actions.browse, 'Prefab browse parameters') },
+            { name: 'lifecycle', description: 'Update or duplicate existing prefabs', inputSchema: buildActionSchema(this.actions.lifecycle, 'Prefab lifecycle parameters') },
+            { name: 'instance', description: 'Prefab instantiation and revert', inputSchema: buildActionSchema(this.actions.instance, 'Prefab instance parameters') },
+            { name: 'edit', description: 'Prefab edit operations', inputSchema: buildActionSchema(this.actions.edit, 'Prefab edit parameters') }
         ];
     }
 

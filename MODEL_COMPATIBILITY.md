@@ -1,87 +1,82 @@
 # Model compatibility and fast Cocos project workflow
 
-This compatibility update adds a model-neutral MCP transport, provider-specific function schemas, project scaffolding, and executable build tools.
+The plugin exposes a model-neutral MCP transport, provider-specific function schemas, project scaffolding, and build tools.
+
+## Supported Cocos Creator versions
+
+The extension package range is `>=3.8.6 <3.9.0`.
+
+CI compiles and runs contract tests against:
+
+- `@cocos/creator-types@3.8.6` — minimum supported version.
+- `@cocos/creator-types@3.8` — the newest published 3.8.x type package resolved by npm.
+
+This is source/API compatibility testing. Editor integration tests should still be run in an installed Cocos Creator 3.8.6 project and the newest available 3.8.x editor before a release.
 
 ## Endpoints
 
 | Endpoint | Purpose |
 | --- | --- |
 | `POST /mcp` | MCP Streamable HTTP request/response endpoint |
-| `GET /mcp` | Returns `405` because this stateless server does not open a server-initiated SSE stream |
-| `GET /manifest` | Lists protocol versions, provider schema endpoints, and authentication mode |
+| `GET /manifest` | Protocol versions, provider schema endpoints, and authentication mode |
 | `GET /v1/tools/openai/responses` | OpenAI Responses API function-tool definitions |
 | `GET /v1/tools/openai/chat` | OpenAI Chat Completions function-tool definitions |
 | `GET /v1/tools/anthropic` | Anthropic tool definitions |
 | `GET /v1/tools/gemini` | Gemini function declarations |
 | `POST /v1/tools/call` | Provider-neutral direct tool invocation |
 
-The MCP endpoint supports protocol revisions `2025-06-18`, `2025-03-26`, and `2024-11-05`. It implements initialization, ping, tool discovery, tool calls, structured tool results, notifications, empty resource/prompt lists, JSON-RPC batches for legacy clients, and the required `202 Accepted` response for accepted notifications.
+## Secure defaults
 
-## Server settings
-
-The project file `settings/mcp-server.json` accepts:
+The project file `settings/mcp-server.json` is created automatically. A random bearer token is generated when the file is first created or when an old configuration has an empty token.
 
 ```json
 {
   "port": 3000,
-  "autoStart": true,
+  "autoStart": false,
   "enableDebugLog": false,
-  "allowedOrigins": ["*"],
+  "allowedOrigins": ["http://127.0.0.1:0"],
   "maxConnections": 10,
   "bindAddress": "127.0.0.1",
-  "authToken": ""
+  "authToken": "generated-random-token"
 }
 ```
 
-Keep `bindAddress` on `127.0.0.1` for normal editor usage. When exposing the server through a secure HTTPS tunnel, configure a non-empty `authToken`; callers then send `Authorization: Bearer <token>`.
+Native and CLI MCP clients normally send no `Origin` header. The default sentinel origin matches no normal browser page. Browser requests are rejected unless their exact origin is explicitly listed in `allowedOrigins`. Binding to a non-loopback address requires a non-empty token.
 
-## OpenAI Responses API through MCP
+Callers send:
 
-OpenAI remote MCP requires a publicly reachable HTTPS URL. Expose the local endpoint through a trusted tunnel or gateway, then use the public `/mcp` URL:
-
-```ts
-import OpenAI from 'openai';
-
-const client = new OpenAI();
-const response = await client.responses.create({
-  model: 'YOUR_OPENAI_MODEL',
-  input: 'Create a 2D starter project and prepare a web desktop build.',
-  tools: [{
-    type: 'mcp',
-    server_label: 'cocos_creator',
-    server_description: 'Controls the active Cocos Creator project.',
-    server_url: 'https://your-secure-domain.example/mcp',
-    authorization: process.env.COCOS_MCP_TOKEN,
-    require_approval: 'always'
-  }]
-});
+```text
+Authorization: Bearer <token from settings/mcp-server.json>
 ```
 
-For a local application that performs function calling itself, fetch `GET /v1/tools/openai/responses` and pass the returned `tools` array to the Responses API. Execute returned function calls with `POST /v1/tools/call`.
+Do not expose the editor endpoint directly to the public Internet. Put remote access behind HTTPS and keep model approval enabled for write/destructive tools.
 
-## Other model providers
+## Tool configuration semantics
 
-- Anthropic-compatible schemas: `GET /v1/tools/anthropic`
-- Gemini-compatible schemas: `GET /v1/tools/gemini`
-- Standard MCP clients: `POST /mcp`
+- An omitted tool filter means “use registry defaults”.
+- An empty enabled-tool list means “disable every tool”.
+- Existing enable/disable choices survive upgrades.
+- Newly introduced tools use their registry default instead of being silently disabled.
 
-The direct call endpoint accepts common shapes:
+Placeholder and unsafe public entries have been removed, including simulated broadcast capture, preview-server control, arbitrary scene script execution, unsupported dependency/compression analysis, preferences import, and the simulated prefab-create path.
+
+## Action schemas
+
+Fusion tools expose one JSON Schema branch per action. Each branch selects exactly one action and documents the parameters required by the underlying Cocos operation. Calls should use:
 
 ```json
 {
-  "name": "project_quick_start",
-  "arguments": {
-    "template": "2d",
-    "root": "assets/game"
+  "action": "create",
+  "params": {
+    "name": "Player",
+    "parentUuid": "optional-parent-uuid"
   }
 }
 ```
 
-It also accepts `arguments` as a JSON string and OpenAI Chat Completions' nested `function` shape.
-
 ## Fast project creation
 
-Call `project_quick_start` to generate a maintainable starter structure:
+Call `project_quick_start`:
 
 ```json
 {
@@ -92,16 +87,7 @@ Call `project_quick_start` to generate a maintainable starter structure:
 }
 ```
 
-Generated assets include:
-
-- `scripts/core/GameConfig.ts`
-- `scripts/core/EventBus.ts`
-- `scripts/core/GameBootstrap.ts`
-- `scripts/components/SceneEntry.ts`
-- `data/project-context.json`
-- `README.md`
-
-The tool only writes below the project's `assets` directory and rejects path traversal. Use `dryRun: true` to preview changes.
+The tool writes only under the project `assets` directory and rejects traversal outside it.
 
 ## Automated build
 
@@ -116,14 +102,14 @@ Call `project_build`:
 }
 ```
 
-Modes:
-
 - `editor`: request a build from the running Cocos Builder.
-- `cli`: run the official Cocos Creator command-line build; `creatorPath` is required.
-- `auto`: try the editor Builder first, then CLI when `creatorPath` is provided.
+- `cli`: run the Cocos Creator executable; `creatorPath` is required.
+- `auto`: try the editor Builder first and then CLI when `creatorPath` is supplied.
 
-A dry run returns the normalized build options and command without starting a build. If execution fails, the tool can open the Build panel and returns the exact CLI command for recovery.
+## Regression checks
 
-## Security guidance
+```bash
+npm test
+```
 
-Tool calls can modify scenes, assets, and build outputs. Keep approval enabled for write/destructive tools, limit enabled tools through the plugin's tool manager, use a bearer token for remote access, validate allowed origins, and never expose an unauthenticated editor endpoint directly to the public Internet.
+The test suite compiles TypeScript, checks provider schemas, verifies empty-whitelist behavior, configuration migration, generated authentication tokens, per-action schemas, bounded batch execution, cache invalidation, and removal of unsupported public tools. Generated `dist/` files are test artifacts and are not committed.

@@ -1,14 +1,9 @@
-// v1.5 core server tools: action-based facade.
 import { ToolDefinition, ToolExecutor, ToolResponse } from '../types';
 import { ServerTools } from './server-tools';
 import { buildActionSchema, executeAction, ToolActionMap } from './core-action-utils';
 
 export class ServerCoreTools implements ToolExecutor {
-    private server: ServerTools;
-
-    constructor(serverTools: ServerTools) {
-        this.server = serverTools;
-    }
+    constructor(private readonly server: ServerTools) {}
 
     private actions: ToolActionMap = {
         info: {
@@ -27,16 +22,8 @@ export class ServerCoreTools implements ToolExecutor {
 
     getTools(): ToolDefinition[] {
         return [
-            {
-                name: 'info',
-                description: 'Server information and connectivity',
-                inputSchema: buildActionSchema(Object.keys(this.actions.info), 'Parameters for the selected action')
-            },
-            {
-                name: 'batch',
-                description: 'Batch calls and cache control',
-                inputSchema: buildActionSchema(Object.keys(this.actions.batch), 'Parameters for the selected action')
-            }
+            { name: 'info', description: 'Server information and connectivity', inputSchema: buildActionSchema(this.actions.info, 'Server information parameters') },
+            { name: 'batch', description: 'Bounded batch calls and cache invalidation', inputSchema: buildActionSchema(this.actions.batch, 'Batch operation parameters') }
         ];
     }
 

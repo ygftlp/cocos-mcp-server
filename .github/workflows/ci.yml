@@ -1,0 +1,25 @@
+name: source-checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [18, 20]
+        creator-types: ['3.8.6', '3.8']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Select Cocos Creator type definitions
+        run: npm install --no-save --ignore-scripts @cocos/creator-types@${{ matrix.creator-types }}
+      - run: npm test

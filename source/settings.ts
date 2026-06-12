@@ -1,3 +1,4 @@
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { MCPServerSettings, ToolManagerSettings, ToolConfiguration } from './types';
@@ -6,7 +7,9 @@ const DEFAULT_SETTINGS: MCPServerSettings = {
     port: 3000,
     autoStart: false,
     enableDebugLog: false,
-    allowedOrigins: ['*'],
+    // A non-matching sentinel prevents the legacy HTTP layer from treating an empty list as wildcard.
+    // CLI/native MCP clients normally send no Origin header and remain supported.
+    allowedOrigins: ['http://127.0.0.1:0'],
     maxConnections: 10,
     bindAddress: '127.0.0.1',
     authToken: ''
@@ -31,24 +34,65 @@ function ensureSettingsDir(): void {
     if (!fs.existsSync(settingsDir)) fs.mkdirSync(settingsDir, { recursive: true });
 }
 
+export function generateAuthToken(): string {
+    return crypto.randomBytes(32).toString('hex');
+}
+
+export function normalizeSettingsData(input: Partial<MCPServerSettings> = {}): MCPServerSettings {
+    const port = Number(input.port);
+    const maxConnections = Number(input.maxConnections);
+    const allowedOrigins = Array.isArray(input.allowedOrigins)
+        ? input.allowedOrigins.filter((origin): origin is string => typeof origin === 'string' && origin.trim().length > 0)
+        : [...DEFAULT_SETTINGS.allowedOrigins];
+    const authToken = typeof input.authToken === 'string' && input.authToken.trim()
+        ? input.authToken.trim()
+        : generateAuthToken();
+
+    return {
+        port: Number.isInteger(port) && port > 0 && port <= 65535 ? port : DEFAULT_SETTINGS.port,
+        autoStart: Boolean(input.autoStart),
+        enableDebugLog: Boolean(input.enableDebugLog),
+        allowedOrigins: allowedOrigins.length > 0 ? allowedOrigins : [...DEFAULT_SETTINGS.allowedOrigins],
+        maxConnections: Number.isInteger(maxConnections) && maxConnections >= 0 ? maxConnections : DEFAULT_SETTINGS.maxConnections,
+        bindAddress: typeof input.bindAddress === 'string' && input.bindAddress.trim()
+            ? input.bindAddress.trim()
+            : DEFAULT_SETTINGS.bindAddress,
+        authToken
+    };
+}
+
 export function readSettings(): MCPServerSettings {
     try {
         ensureSettingsDir();
         const settingsFile = getSettingsPath();
-        if (fs.existsSync(settingsFile)) {
-            const content = fs.readFileSync(settingsFile, 'utf8');
-            return { ...DEFAULT_SETTINGS, ...JSON.parse(content) };
+        const stored = fs.existsSync(settingsFile)
+            ? JSON.parse(fs.readFileSync(settingsFile, 'utf8'))
+            : {};
+        const settings = normalizeSettingsData({ ...DEFAULT_SETTINGS, ...stored });
+
+        // Persist generated tokens and newly introduced safe defaults once, so clients can read a stable token.
+        if (!fs.existsSync(settingsFile) || JSON.stringify(stored) !== JSON.stringify(settings)) {
+            fs.writeFileSync(settingsFile, JSON.stringify(settings, null, 2));
         }
+        return settings;
     } catch (error) {
         console.error('Failed to read settings:', error);
+        const fallback = normalizeSettingsData(DEFAULT_SETTINGS);
+        try {
+            ensureSettingsDir();
+            fs.writeFileSync(getSettingsPath(), JSON.stringify(fallback, null, 2));
+        } catch (writeError) {
+            console.error('Failed to persist fallback settings:', writeError);
+        }
+        return fallback;
     }
-    return { ...DEFAULT_SETTINGS };
 }
 
 export function saveSettings(settings: MCPServerSettings): void {
     try {
         ensureSettingsDir();
-        fs.writeFileSync(getSettingsPath(), JSON.stringify(settings, null, 2));
+        const normalized = normalizeSettingsData(settings);
+        fs.writeFileSync(getSettingsPath(), JSON.stringify(normalized, null, 2));
     } catch (error) {
         console.error('Failed to save settings:', error);
         throw error;

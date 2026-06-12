@@ -1,4 +1,3 @@
-// v1.5 core reference image tools: action-based facade.
 import { ToolDefinition, ToolExecutor, ToolResponse } from '../types';
 import { ReferenceImageTools } from './reference-image-tools';
 import { buildActionSchema, executeAction, ToolActionMap } from './core-action-utils';
@@ -27,16 +26,8 @@ export class ReferenceImageCoreTools implements ToolExecutor {
 
     getTools(): ToolDefinition[] {
         return [
-            {
-                name: 'manage',
-                description: 'Reference image management',
-                inputSchema: buildActionSchema(Object.keys(this.actions.manage), 'Parameters for the selected action')
-            },
-            {
-                name: 'view',
-                description: 'Reference image view operations',
-                inputSchema: buildActionSchema(Object.keys(this.actions.view), 'Parameters for the selected action')
-            }
+            { name: 'manage', description: 'Reference image management', inputSchema: buildActionSchema(this.actions.manage, 'Reference image management parameters') },
+            { name: 'view', description: 'Reference image view operations', inputSchema: buildActionSchema(this.actions.view, 'Reference image view parameters') }
         ];
     }
 

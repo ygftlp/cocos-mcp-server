@@ -9,7 +9,6 @@ import { ProjectCoreTools } from './core-project-tools';
 import { DebugCoreTools } from './core-debug-tools';
 import { PreferencesCoreTools } from './core-preferences-tools';
 import { ServerCoreTools } from './core-server-tools';
-import { BroadcastCoreTools } from './core-broadcast-tools';
 import { ReferenceImageCoreTools } from './core-reference-image-tools';
 import { SceneViewCoreTools } from './core-scene-view-tools';
 import { ValidationCoreTools } from './core-validation-tools';
@@ -17,7 +16,6 @@ import { ServerTools } from './server-tools';
 
 export type ToolHandler = { executor: ToolExecutor; method: string };
 export type ToolCallExecutor = (toolName: string, args: any) => Promise<any>;
-export type CacheInvalidator = (scope?: string) => number;
 
 export class ToolRegistry {
     private executors: Record<string, ToolExecutor>;
@@ -40,7 +38,6 @@ export class ToolRegistry {
             debug: new DebugCoreTools(),
             preferences: new PreferencesCoreTools(),
             server: new ServerCoreTools(serverTools),
-            broadcast: new BroadcastCoreTools(),
             referenceImage: new ReferenceImageCoreTools(),
             sceneView: new SceneViewCoreTools(),
             validation: new ValidationCoreTools()
@@ -66,26 +63,23 @@ export class ToolRegistry {
         return configs;
     }
 
-    // Build the runtime tool list and handler map based on enabled tool configs.
+    // undefined means no user filter (all tools); [] means the user explicitly disabled every tool.
     public buildRuntime(enabledTools?: ToolConfig[]): { toolsList: ToolDefinition[]; toolHandlers: Map<string, ToolHandler> } {
         const toolsList: ToolDefinition[] = [];
-        const toolHandlers: Map<string, ToolHandler> = new Map();
-
-        const enabledSet = enabledTools && enabledTools.length > 0
-            ? new Set(enabledTools.map(tool => `${tool.category}_${tool.name}`))
+        const toolHandlers = new Map<string, ToolHandler>();
+        const enabledSet = Array.isArray(enabledTools)
+            ? new Set(enabledTools.map((tool) => `${tool.category}_${tool.name}`))
             : null;
 
         for (const [category, tools] of this.getToolDefinitionsByCategory()) {
             const executor = this.executors[category];
             for (const tool of tools) {
                 const fullName = `${category}_${tool.name}`;
-                if (enabledSet && !enabledSet.has(fullName)) {
-                    continue;
-                }
+                if (enabledSet !== null && !enabledSet.has(fullName)) continue;
+
                 toolsList.push({
+                    ...tool,
                     name: fullName,
-                    description: tool.description,
-                    inputSchema: tool.inputSchema,
                     xCocos: tool.xCocos ?? this.buildToolMeta(category, tool.name)
                 });
                 toolHandlers.set(fullName, { executor, method: tool.name });
@@ -96,15 +90,12 @@ export class ToolRegistry {
     }
 
     private getToolDefinitionsByCategory(): Map<string, ToolDefinition[]> {
-        if (this.toolDefinitionsByCategory) {
-            return this.toolDefinitionsByCategory;
-        }
+        if (this.toolDefinitionsByCategory) return this.toolDefinitionsByCategory;
 
         const definitions = new Map<string, ToolDefinition[]>();
         for (const [category, executor] of Object.entries(this.executors)) {
             definitions.set(category, executor.getTools());
         }
-
         this.toolDefinitionsByCategory = definitions;
         return definitions;
     }
@@ -114,9 +105,7 @@ export class ToolRegistry {
     }
 
     private async executeToolCall(toolName: string, args: any): Promise<any> {
-        if (!this.toolCallExecutor) {
-            throw new Error('Tool executor not initialized');
-        }
+        if (!this.toolCallExecutor) throw new Error('Tool executor not initialized');
         return this.toolCallExecutor(toolName, args);
     }
 
@@ -125,16 +114,13 @@ export class ToolRegistry {
         const normalized = (scope || 'all').toLowerCase();
 
         for (const [category, executor] of Object.entries(this.executors)) {
-            if (!this.shouldClearCacheForScope(category, normalized)) {
-                continue;
-            }
-            const candidate: any = executor;
+            if (!this.shouldClearCacheForScope(category, normalized)) continue;
+            const candidate = executor as any;
             if (typeof candidate.clearCache === 'function') {
                 candidate.clearCache();
                 cleared++;
             }
         }
-
         return cleared;
     }
 
@@ -155,42 +141,29 @@ export class ToolRegistry {
         const readVerbs = ['get', 'list', 'query', 'find', 'check', 'validate', 'analyze', 'detect'];
         const writeVerbs = ['set', 'update', 'create', 'delete', 'remove', 'add', 'attach', 'move', 'copy', 'import', 'reimport', 'save', 'apply', 'reset', 'start', 'stop', 'build', 'run', 'open'];
         const readHints = ['info', 'status', 'hierarchy', 'browse', 'logs', 'log', 'view'];
-        const writeHints = ['manage', 'lifecycle', 'transform', 'operations', 'system', 'preview', 'execution', 'snapshot', 'undo', 'batch', 'clipboard', 'edit', 'compress', 'manifest', 'property', 'event', 'control'];
+        const writeHints = ['manage', 'lifecycle', 'transform', 'operations', 'system', 'snapshot', 'undo', 'batch', 'clipboard', 'edit', 'manifest', 'property', 'control'];
         const destructiveVerbs = ['delete', 'remove', 'move', 'reimport', 'reset'];
 
-        const isRead = readVerbs.some(v => name.startsWith(v) || name.includes(`_${v}`) || full.includes(v))
-            || readHints.some(v => name.includes(v) || full.includes(v));
-        const isWrite = writeVerbs.some(v => name.startsWith(v) || name.includes(`_${v}`) || full.includes(v))
-            || writeHints.some(v => name.includes(v) || full.includes(v));
-        const destructive = destructiveVerbs.some(v => name.startsWith(v) || name.includes(`_${v}`));
+        const isRead = readVerbs.some((verb) => name.startsWith(verb) || name.includes(`_${verb}`) || full.includes(verb))
+            || readHints.some((hint) => name.includes(hint) || full.includes(hint));
+        const isWrite = writeVerbs.some((verb) => name.startsWith(verb) || name.includes(`_${verb}`) || full.includes(verb))
+            || writeHints.some((hint) => name.includes(hint) || full.includes(hint));
+        const destructive = destructiveVerbs.some((verb) => name.startsWith(verb) || name.includes(`_${verb}`));
 
-        let cost: ToolMeta['cost'] = 'low';
-        if (name.includes('build') || name.includes('analyze') || name.includes('validate') || name.includes('optimize')) {
-            cost = 'high';
-        } else if (name.includes('query') || name.includes('get') || name.includes('find')) {
-            cost = 'low';
-        } else {
-            cost = 'medium';
-        }
+        let cost: ToolMeta['cost'] = 'medium';
+        if (name.includes('build') || name.includes('analyze') || name.includes('validate') || name.includes('optimize')) cost = 'high';
+        else if (name.includes('query') || name.includes('get') || name.includes('find')) cost = 'low';
 
-        let scope: string[] = [];
-        if (category === 'scene' || category === 'node' || category === 'component' || category === 'prefab' || category === 'sceneView' || category === 'referenceImage') {
-            scope = ['scene'];
-        } else if (category === 'project' || category === 'asset' || category === 'preferences') {
-            scope = ['project', 'assets'];
-        } else if (category === 'server' || category === 'debug' || category === 'broadcast') {
-            scope = ['system'];
-        } else {
-            scope = ['general'];
-        }
-
-        const sideEffect = isWrite || destructive;
-        const kind: ToolMeta['kind'] = isWrite && !isRead ? 'write' : 'read';
+        let scope: string[];
+        if (['scene', 'node', 'component', 'prefab', 'sceneView', 'referenceImage'].includes(category)) scope = ['scene'];
+        else if (['project', 'asset', 'preferences'].includes(category)) scope = ['project', 'assets'];
+        else if (['server', 'debug'].includes(category)) scope = ['system'];
+        else scope = ['general'];
 
         return {
-            kind,
+            kind: isWrite && !isRead ? 'write' : 'read',
             destructive,
-            sideEffect,
+            sideEffect: isWrite || destructive,
             cost,
             scope
         };

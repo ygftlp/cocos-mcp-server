@@ -1,4 +1,3 @@
-// v1.5 core validation tools: action-based facade.
 import { ToolDefinition, ToolExecutor, ToolResponse } from '../types';
 import { ValidationTools } from './validation-tools';
 import { DebugTools } from './debug-tools';
@@ -28,26 +27,10 @@ export class ValidationCoreTools implements ToolExecutor {
 
     getTools(): ToolDefinition[] {
         return [
-            {
-                name: 'scene',
-                description: 'Scene validation',
-                inputSchema: buildActionSchema(Object.keys(this.actions.scene), 'Parameters for the selected action')
-            },
-            {
-                name: 'asset',
-                description: 'Asset validation',
-                inputSchema: buildActionSchema(Object.keys(this.actions.asset), 'Parameters for the selected action')
-            },
-            {
-                name: 'json',
-                description: 'JSON validation and safety helpers',
-                inputSchema: buildActionSchema(Object.keys(this.actions.json), 'Parameters for the selected action')
-            },
-            {
-                name: 'request',
-                description: 'MCP request formatting helpers',
-                inputSchema: buildActionSchema(Object.keys(this.actions.request), 'Parameters for the selected action')
-            }
+            { name: 'scene', description: 'Scene validation', inputSchema: buildActionSchema(this.actions.scene, 'Scene validation parameters') },
+            { name: 'asset', description: 'Asset availability validation', inputSchema: buildActionSchema(this.actions.asset, 'Asset validation parameters') },
+            { name: 'json', description: 'JSON validation and safety helpers', inputSchema: buildActionSchema(this.actions.json, 'JSON helper parameters') },
+            { name: 'request', description: 'MCP request formatting helpers', inputSchema: buildActionSchema(this.actions.request, 'MCP request parameters') }
         ];
     }
 

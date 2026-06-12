@@ -1,4 +1,3 @@
-// v1.5 core component tools: action-based facade.
 import { ToolDefinition, ToolExecutor, ToolResponse } from '../types';
 import { ComponentTools } from './component-tools';
 import { SceneAdvancedTools } from './scene-advanced-tools';
@@ -27,39 +26,15 @@ export class ComponentCoreTools implements ToolExecutor {
         property: {
             set: { executor: this.component, method: 'set_component_property' },
             reset: { executor: this.advanced, method: 'reset_component' }
-        },
-        event: {
-            execute_method: { executor: this.advanced, method: 'execute_component_method' }
         }
     };
 
     getTools(): ToolDefinition[] {
         return [
-            {
-                name: 'manage',
-                description: 'Manage components (add/remove/list available)',
-                inputSchema: buildActionSchema(Object.keys(this.actions.manage), 'Parameters for the selected action')
-            },
-            {
-                name: 'script',
-                description: 'Script component operations',
-                inputSchema: buildActionSchema(Object.keys(this.actions.script), 'Parameters for the selected action')
-            },
-            {
-                name: 'query',
-                description: 'Query components on node',
-                inputSchema: buildActionSchema(Object.keys(this.actions.query), 'Parameters for the selected action')
-            },
-            {
-                name: 'property',
-                description: 'Component property operations',
-                inputSchema: buildActionSchema(Object.keys(this.actions.property), 'Parameters for the selected action')
-            },
-            {
-                name: 'event',
-                description: 'Execute component methods',
-                inputSchema: buildActionSchema(Object.keys(this.actions.event), 'Parameters for the selected action')
-            }
+            { name: 'manage', description: 'Manage components', inputSchema: buildActionSchema(this.actions.manage, 'Component management parameters') },
+            { name: 'script', description: 'Script component operations', inputSchema: buildActionSchema(this.actions.script, 'Script component parameters') },
+            { name: 'query', description: 'Query components on a node', inputSchema: buildActionSchema(this.actions.query, 'Component query parameters') },
+            { name: 'property', description: 'Component property operations', inputSchema: buildActionSchema(this.actions.property, 'Component property parameters') }
         ];
     }
 

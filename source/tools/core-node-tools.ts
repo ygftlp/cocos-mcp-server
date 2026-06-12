@@ -1,4 +1,3 @@
-// v1.5 core node tools: action-based facade.
 import { ToolDefinition, ToolExecutor, ToolResponse } from '../types';
 import { NodeTools } from './node-tools';
 import { SceneAdvancedTools } from './scene-advanced-tools';
@@ -48,41 +47,13 @@ export class NodeCoreTools implements ToolExecutor {
 
     getTools(): ToolDefinition[] {
         return [
-            {
-                name: 'query',
-                description: 'Node query and lookup',
-                inputSchema: buildActionSchema(Object.keys(this.actions.query), 'Parameters for the selected action')
-            },
-            {
-                name: 'lifecycle',
-                description: 'Node lifecycle operations',
-                inputSchema: buildActionSchema(Object.keys(this.actions.lifecycle), 'Parameters for the selected action')
-            },
-            {
-                name: 'transform',
-                description: 'Node transform and property changes',
-                inputSchema: buildActionSchema(Object.keys(this.actions.transform), 'Parameters for the selected action')
-            },
-            {
-                name: 'hierarchy',
-                description: 'Node hierarchy operations',
-                inputSchema: buildActionSchema(Object.keys(this.actions.hierarchy), 'Parameters for the selected action')
-            },
-            {
-                name: 'clipboard',
-                description: 'Node clipboard operations',
-                inputSchema: buildActionSchema(Object.keys(this.actions.clipboard), 'Parameters for the selected action')
-            },
-            {
-                name: 'property_management',
-                description: 'Reset and manage node properties',
-                inputSchema: buildActionSchema(Object.keys(this.actions.property_management), 'Parameters for the selected action')
-            },
-            {
-                name: 'batch',
-                description: 'Batch array operations for nodes',
-                inputSchema: buildActionSchema(Object.keys(this.actions.batch), 'Parameters for the selected action')
-            }
+            { name: 'query', description: 'Node query and lookup', inputSchema: buildActionSchema(this.actions.query, 'Node query parameters') },
+            { name: 'lifecycle', description: 'Node lifecycle operations', inputSchema: buildActionSchema(this.actions.lifecycle, 'Node lifecycle parameters') },
+            { name: 'transform', description: 'Node transform and property changes', inputSchema: buildActionSchema(this.actions.transform, 'Node transform parameters') },
+            { name: 'hierarchy', description: 'Node hierarchy operations', inputSchema: buildActionSchema(this.actions.hierarchy, 'Node hierarchy parameters') },
+            { name: 'clipboard', description: 'Node clipboard operations', inputSchema: buildActionSchema(this.actions.clipboard, 'Node clipboard parameters') },
+            { name: 'property_management', description: 'Reset and manage node properties', inputSchema: buildActionSchema(this.actions.property_management, 'Node property parameters') },
+            { name: 'batch', description: 'Batch array operations for nodes', inputSchema: buildActionSchema(this.actions.batch, 'Node batch parameters') }
         ];
     }
 
@@ -90,9 +61,8 @@ export class NodeCoreTools implements ToolExecutor {
         return executeAction(toolName, args, this.actions);
     }
 
-    public clearCache(): void {
-        if (typeof (this.node as any).clearCache === 'function') {
-            (this.node as any).clearCache();
-        }
+    clearCache(): void {
+        const candidate = this.node as any;
+        if (typeof candidate.clearCache === 'function') candidate.clearCache();
     }
 }

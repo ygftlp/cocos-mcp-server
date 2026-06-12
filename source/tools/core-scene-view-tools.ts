@@ -1,4 +1,3 @@
-// v1.5 core scene view tools: action-based facade.
 import { ToolDefinition, ToolExecutor, ToolResponse } from '../types';
 import { SceneViewTools } from './scene-view-tools';
 import { buildActionSchema, executeAction, ToolActionMap } from './core-action-utils';
@@ -35,16 +34,8 @@ export class SceneViewCoreTools implements ToolExecutor {
 
     getTools(): ToolDefinition[] {
         return [
-            {
-                name: 'control',
-                description: 'Scene view controls and gizmo settings',
-                inputSchema: buildActionSchema(Object.keys(this.actions.control), 'Parameters for the selected action')
-            },
-            {
-                name: 'tools',
-                description: 'Scene view tools (focus/align/status)',
-                inputSchema: buildActionSchema(Object.keys(this.actions.tools), 'Parameters for the selected action')
-            }
+            { name: 'control', description: 'Scene view controls and gizmo settings', inputSchema: buildActionSchema(this.actions.control, 'Scene view control parameters') },
+            { name: 'tools', description: 'Scene view focus, alignment and status tools', inputSchema: buildActionSchema(this.actions.tools, 'Scene view tool parameters') }
         ];
     }
 
