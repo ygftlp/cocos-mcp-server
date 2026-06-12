@@ -9,70 +9,7 @@ export class BroadcastTools implements ToolExecutor {
     }
 
     getTools(): ToolDefinition[] {
-        return [
-            {
-                name: 'get_broadcast_log',
-                description: 'Get recent broadcast messages log',
-                inputSchema: {
-                    type: 'object',
-                    properties: {
-                        limit: {
-                            type: 'number',
-                            description: 'Number of recent messages to return',
-                            default: 50
-                        },
-                        messageType: {
-                            type: 'string',
-                            description: 'Filter by message type (optional)'
-                        }
-                    }
-                }
-            },
-            {
-                name: 'listen_broadcast',
-                description: 'Start listening for specific broadcast messages',
-                inputSchema: {
-                    type: 'object',
-                    properties: {
-                        messageType: {
-                            type: 'string',
-                            description: 'Message type to listen for'
-                        }
-                    },
-                    required: ['messageType']
-                }
-            },
-            {
-                name: 'stop_listening',
-                description: 'Stop listening for specific broadcast messages',
-                inputSchema: {
-                    type: 'object',
-                    properties: {
-                        messageType: {
-                            type: 'string',
-                            description: 'Message type to stop listening for'
-                        }
-                    },
-                    required: ['messageType']
-                }
-            },
-            {
-                name: 'clear_broadcast_log',
-                description: 'Clear the broadcast messages log',
-                inputSchema: {
-                    type: 'object',
-                    properties: {}
-                }
-            },
-            {
-                name: 'get_active_listeners',
-                description: 'Get list of active broadcast listeners',
-                inputSchema: {
-                    type: 'object',
-                    properties: {}
-                }
-            }
-        ];
+        return [];
     }
 
     async execute(toolName: string, args: any): Promise<ToolResponse> {

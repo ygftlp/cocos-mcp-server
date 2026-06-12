@@ -2,58 +2,7 @@ import { ToolDefinition, ToolResponse, ToolExecutor } from '../types';
 
 export class ValidationTools implements ToolExecutor {
     getTools(): ToolDefinition[] {
-        return [
-            {
-                name: 'validate_json_params',
-                description: 'Validate and fix JSON parameters before sending to other tools',
-                inputSchema: {
-                    type: 'object',
-                    properties: {
-                        jsonString: {
-                            type: 'string',
-                            description: 'JSON string to validate and fix'
-                        },
-                        expectedSchema: {
-                            type: 'object',
-                            description: 'Expected parameter schema (optional)'
-                        }
-                    },
-                    required: ['jsonString']
-                }
-            },
-            {
-                name: 'safe_string_value',
-                description: 'Create a safe string value that won\'t cause JSON parsing issues',
-                inputSchema: {
-                    type: 'object',
-                    properties: {
-                        value: {
-                            type: 'string',
-                            description: 'String value to make safe'
-                        }
-                    },
-                    required: ['value']
-                }
-            },
-            {
-                name: 'format_mcp_request',
-                description: 'Format a complete MCP request with proper JSON escaping',
-                inputSchema: {
-                    type: 'object',
-                    properties: {
-                        toolName: {
-                            type: 'string',
-                            description: 'Tool name to call'
-                        },
-                        arguments: {
-                            type: 'object',
-                            description: 'Tool arguments'
-                        }
-                    },
-                    required: ['toolName', 'arguments']
-                }
-            }
-        ];
+        return [];
     }
 
     async execute(toolName: string, args: any): Promise<ToolResponse> {

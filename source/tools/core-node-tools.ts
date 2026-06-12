@@ -1,0 +1,98 @@
+// v1.5 core node tools: action-based facade.
+import { ToolDefinition, ToolExecutor, ToolResponse } from '../types';
+import { NodeTools } from './node-tools';
+import { SceneAdvancedTools } from './scene-advanced-tools';
+import { buildActionSchema, executeAction, ToolActionMap } from './core-action-utils';
+
+export class NodeCoreTools implements ToolExecutor {
+    private node = new NodeTools();
+    private advanced = new SceneAdvancedTools();
+
+    private actions: ToolActionMap = {
+        query: {
+            info: { executor: this.node, method: 'get_node_info' },
+            find: { executor: this.node, method: 'find_nodes' },
+            find_by_name: { executor: this.node, method: 'find_node_by_name' },
+            list: { executor: this.node, method: 'get_all_nodes' },
+            detect_type: { executor: this.node, method: 'detect_node_type' }
+        },
+        lifecycle: {
+            create: { executor: this.node, method: 'create_node' },
+            delete: { executor: this.node, method: 'delete_node' },
+            duplicate: { executor: this.node, method: 'duplicate_node' },
+            move: { executor: this.node, method: 'move_node' }
+        },
+        transform: {
+            set_transform: { executor: this.node, method: 'set_node_transform' },
+            set_property: { executor: this.node, method: 'set_node_property' }
+        },
+        hierarchy: {
+            move: { executor: this.node, method: 'move_node' },
+            duplicate: { executor: this.node, method: 'duplicate_node' },
+            query_by_asset: { executor: this.advanced, method: 'query_nodes_by_asset_uuid' }
+        },
+        clipboard: {
+            copy: { executor: this.advanced, method: 'copy_node' },
+            cut: { executor: this.advanced, method: 'cut_node' },
+            paste: { executor: this.advanced, method: 'paste_node' }
+        },
+        property_management: {
+            reset_property: { executor: this.advanced, method: 'reset_node_property' },
+            reset_transform: { executor: this.advanced, method: 'reset_node_transform' }
+        },
+        batch: {
+            move_array_element: { executor: this.advanced, method: 'move_array_element' },
+            remove_array_element: { executor: this.advanced, method: 'remove_array_element' }
+        }
+    };
+
+    getTools(): ToolDefinition[] {
+        return [
+            {
+                name: 'query',
+                description: 'Node query and lookup',
+                inputSchema: buildActionSchema(Object.keys(this.actions.query), 'Parameters for the selected action')
+            },
+            {
+                name: 'lifecycle',
+                description: 'Node lifecycle operations',
+                inputSchema: buildActionSchema(Object.keys(this.actions.lifecycle), 'Parameters for the selected action')
+            },
+            {
+                name: 'transform',
+                description: 'Node transform and property changes',
+                inputSchema: buildActionSchema(Object.keys(this.actions.transform), 'Parameters for the selected action')
+            },
+            {
+                name: 'hierarchy',
+                description: 'Node hierarchy operations',
+                inputSchema: buildActionSchema(Object.keys(this.actions.hierarchy), 'Parameters for the selected action')
+            },
+            {
+                name: 'clipboard',
+                description: 'Node clipboard operations',
+                inputSchema: buildActionSchema(Object.keys(this.actions.clipboard), 'Parameters for the selected action')
+            },
+            {
+                name: 'property_management',
+                description: 'Reset and manage node properties',
+                inputSchema: buildActionSchema(Object.keys(this.actions.property_management), 'Parameters for the selected action')
+            },
+            {
+                name: 'batch',
+                description: 'Batch array operations for nodes',
+                inputSchema: buildActionSchema(Object.keys(this.actions.batch), 'Parameters for the selected action')
+            }
+        ];
+    }
+
+    async execute(toolName: string, args: any): Promise<ToolResponse> {
+        return executeAction(toolName, args, this.actions);
+    }
+
+    public clearCache(): void {
+        if (typeof (this.node as any).clearCache === 'function') {
+            (this.node as any).clearCache();
+        }
+    }
+}

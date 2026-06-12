@@ -2,9 +2,46 @@ import { MCPServer } from './mcp-server';
 import { readSettings, saveSettings } from './settings';
 import { MCPServerSettings } from './types';
 import { ToolManager } from './tools/tool-manager';
+import { ToolRegistry } from './tools/tool-registry';
 
 let mcpServer: MCPServer | null = null;
 let toolManager: ToolManager;
+let toolRegistry: ToolRegistry;
+
+type SettingsInput = Partial<MCPServerSettings> & { debugLog?: boolean };
+
+// Normalize settings payloads and apply safe defaults.
+
+function normalizeSettings(input: SettingsInput): MCPServerSettings {
+    const current = mcpServer ? mcpServer.getSettings() : readSettings();
+    const normalized: MCPServerSettings = {
+        ...current,
+        ...input
+    };
+
+    if (typeof input.enableDebugLog !== 'boolean' && typeof input.debugLog === 'boolean') {
+        normalized.enableDebugLog = input.debugLog;
+    }
+
+    if (!Array.isArray(normalized.allowedOrigins) || normalized.allowedOrigins.length === 0) {
+        normalized.allowedOrigins = Array.isArray(current.allowedOrigins) && current.allowedOrigins.length > 0
+            ? current.allowedOrigins
+            : ['*'];
+    }
+
+    if (!Number.isFinite(normalized.port) || normalized.port <= 0) {
+        normalized.port = current.port;
+    }
+
+    if (!Number.isFinite(normalized.maxConnections) || normalized.maxConnections < 0) {
+        normalized.maxConnections = current.maxConnections;
+    }
+
+    normalized.autoStart = Boolean(normalized.autoStart);
+    normalized.enableDebugLog = Boolean(normalized.enableDebugLog);
+
+    return normalized;
+}
 
 /**
  * @en Registration method for the main process of Extension
@@ -42,7 +79,7 @@ export const methods: { [key: string]: (...any: any) => any } = {
      */
     async stopServer() {
         if (mcpServer) {
-            mcpServer.stop();
+            await mcpServer.stop();
         } else {
             console.warn('[MCP插件] mcpServer 未初始化');
         }
@@ -65,15 +102,19 @@ export const methods: { [key: string]: (...any: any) => any } = {
      * @en Update server settings
      * @zh 更新服务器设置
      */
-    updateSettings(settings: MCPServerSettings) {
-        saveSettings(settings);
+    async updateSettings(settings: SettingsInput) {
+        const normalized = normalizeSettings(settings);
+        saveSettings(normalized);
+        if (!toolRegistry) {
+            toolRegistry = new ToolRegistry();
+        }
         if (mcpServer) {
-            mcpServer.stop();
-            mcpServer = new MCPServer(settings);
-            mcpServer.start();
+            await mcpServer.stop();
+            mcpServer = new MCPServer(normalized, toolRegistry);
+            await mcpServer.start();
         } else {
-            mcpServer = new MCPServer(settings);
-            mcpServer.start();
+            mcpServer = new MCPServer(normalized, toolRegistry);
+            await mcpServer.start();
         }
     },
 
@@ -225,11 +266,12 @@ export function load() {
     console.log('Cocos MCP Server extension loaded');
     
     // 初始化工具管理器
-    toolManager = new ToolManager();
+    toolRegistry = new ToolRegistry();
+    toolManager = new ToolManager(toolRegistry);
     
     // 读取设置
     const settings = readSettings();
-    mcpServer = new MCPServer(settings);
+    mcpServer = new MCPServer(settings, toolRegistry);
     
     // 初始化MCP服务器的工具列表
     const enabledTools = toolManager.getEnabledTools();

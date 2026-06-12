@@ -1,15 +1,19 @@
 import { v4 as uuidv4 } from 'uuid';
-import { ToolConfig, ToolConfiguration, ToolManagerSettings, ToolDefinition } from '../types';
+import { ToolConfig, ToolConfiguration, ToolManagerSettings } from '../types';
+import { ToolRegistry } from './tool-registry';
 import * as fs from 'fs';
 import * as path from 'path';
 
 export class ToolManager {
     private settings: ToolManagerSettings;
     private availableTools: ToolConfig[] = [];
+    private registry: ToolRegistry;
 
-    constructor() {
+    constructor(registry: ToolRegistry) {
+        this.registry = registry;
         this.settings = this.readToolManagerSettings();
         this.initializeAvailableTools();
+        this.migrateConfigurations();
         
         // 如果没有配置，自动创建一个默认配置
         if (this.settings.configurations.length === 0) {
@@ -78,145 +82,155 @@ export class ToolManager {
         }
     }
 
+    // Load available tool configs from the registry, fallback to defaults if empty.
+
+
     private initializeAvailableTools(): void {
-        // 从MCP服务器获取真实的工具列表
-        try {
-            // 导入所有工具类
-            const { SceneTools } = require('./scene-tools');
-            const { NodeTools } = require('./node-tools');
-            const { ComponentTools } = require('./component-tools');
-            const { PrefabTools } = require('./prefab-tools');
-            const { ProjectTools } = require('./project-tools');
-            const { DebugTools } = require('./debug-tools');
-            const { PreferencesTools } = require('./preferences-tools');
-            const { ServerTools } = require('./server-tools');
-            const { BroadcastTools } = require('./broadcast-tools');
-            const { SceneAdvancedTools } = require('./scene-advanced-tools');
-            const { SceneViewTools } = require('./scene-view-tools');
-            const { ReferenceImageTools } = require('./reference-image-tools');
-            const { AssetAdvancedTools } = require('./asset-advanced-tools');
-            const { ValidationTools } = require('./validation-tools');
+        this.availableTools = this.registry.listToolConfigs();
+        if (this.availableTools.length === 0) {
+            this.initializeDefaultTools();
+            return;
+        }
+        console.log(`[ToolManager] Initialized ${this.availableTools.length} tools from registry`);
+    }
 
-            // 初始化工具实例
-            const tools = {
-                scene: new SceneTools(),
-                node: new NodeTools(),
-                component: new ComponentTools(),
-                prefab: new PrefabTools(),
-                project: new ProjectTools(),
-                debug: new DebugTools(),
-                preferences: new PreferencesTools(),
-                server: new ServerTools(),
-                broadcast: new BroadcastTools(),
-                sceneAdvanced: new SceneAdvancedTools(),
-                sceneView: new SceneViewTools(),
-                referenceImage: new ReferenceImageTools(),
-                assetAdvanced: new AssetAdvancedTools(),
-                validation: new ValidationTools()
-            };
+    // Reconcile stored configurations with current registry tool set.
 
-            // 从每个工具类获取工具列表
-            this.availableTools = [];
-            for (const [category, toolSet] of Object.entries(tools)) {
-                const toolDefinitions = toolSet.getTools();
-                toolDefinitions.forEach((tool: any) => {
-                    this.availableTools.push({
-                        category: category,
-                        name: tool.name,
-                        enabled: true, // 默认启用
-                        description: tool.description
-                    });
-                });
+    private migrateConfigurations(): void {
+        if (this.settings.configurations.length === 0) {
+            return;
+        }
+
+        const availableMap = new Map<string, ToolConfig>();
+        this.availableTools.forEach(tool => {
+            availableMap.set(`${tool.category}_${tool.name}`, tool);
+        });
+
+        let changed = false;
+        this.settings.configurations = this.settings.configurations.map(config => {
+            const enabledSet = new Set<string>();
+            let matched = 0;
+
+            for (const tool of config.tools) {
+                const key = `${tool.category}_${tool.name}`;
+                if (availableMap.has(key)) {
+                    matched++;
+                    if (tool.enabled) {
+                        enabledSet.add(key);
+                    }
+                }
             }
 
-            console.log(`[ToolManager] Initialized ${this.availableTools.length} tools from MCP server`);
-        } catch (error) {
-            console.error('[ToolManager] Failed to initialize tools from MCP server:', error);
-            // 如果获取失败，使用默认工具列表作为后备
-            this.initializeDefaultTools();
+            const useEnabledMap = matched > 0;
+            const mergedTools = this.availableTools.map(tool => {
+                const key = `${tool.category}_${tool.name}`;
+                return {
+                    ...tool,
+                    enabled: useEnabledMap ? enabledSet.has(key) : tool.enabled
+                };
+            });
+
+            if (matched !== config.tools.length || config.tools.length !== mergedTools.length) {
+                changed = true;
+            }
+
+            return {
+                ...config,
+                tools: mergedTools,
+                updatedAt: new Date().toISOString()
+            };
+        });
+
+        if (!this.settings.currentConfigId || !this.settings.configurations.find(c => c.id === this.settings.currentConfigId)) {
+            this.settings.currentConfigId = this.settings.configurations[0]?.id || '';
+            changed = true;
+        }
+
+        if (changed) {
+            this.saveSettings();
         }
     }
 
+    // Fallback default tool list for v1.5 core tools.
+
     private initializeDefaultTools(): void {
-        // 默认工具列表作为后备方案
+        // 默认工具列表作为后备方案（v1.5核心50工具）
         const toolCategories = [
             { category: 'scene', name: '场景工具', tools: [
-                { name: 'getCurrentSceneInfo', description: '获取当前场景信息' },
-                { name: 'getSceneHierarchy', description: '获取场景层级结构' },
-                { name: 'createNewScene', description: '创建新场景' },
-                { name: 'saveScene', description: '保存场景' },
-                { name: 'loadScene', description: '加载场景' }
+                { name: 'management', description: '场景管理' },
+                { name: 'hierarchy', description: '场景层级' },
+                { name: 'execution_control', description: '执行控制' },
+                { name: 'snapshot', description: '场景快照' },
+                { name: 'query', description: '场景查询' },
+                { name: 'undo', description: '撤销记录' }
             ]},
             { category: 'node', name: '节点工具', tools: [
-                { name: 'getAllNodes', description: '获取所有节点' },
-                { name: 'findNodeByName', description: '根据名称查找节点' },
-                { name: 'createNode', description: '创建节点' },
-                { name: 'deleteNode', description: '删除节点' },
-                { name: 'setNodeProperty', description: '设置节点属性' },
-                { name: 'getNodeInfo', description: '获取节点信息' }
+                { name: 'query', description: '节点查询' },
+                { name: 'lifecycle', description: '节点生命周期' },
+                { name: 'transform', description: '节点变换' },
+                { name: 'hierarchy', description: '节点层级' },
+                { name: 'clipboard', description: '节点剪贴板' },
+                { name: 'property_management', description: '节点属性管理' },
+                { name: 'batch', description: '节点批处理' }
             ]},
             { category: 'component', name: '组件工具', tools: [
-                { name: 'addComponentToNode', description: '添加组件到节点' },
-                { name: 'removeComponentFromNode', description: '从节点移除组件' },
-                { name: 'setComponentProperty', description: '设置组件属性' },
-                { name: 'getComponentInfo', description: '获取组件信息' }
+                { name: 'manage', description: '组件管理' },
+                { name: 'script', description: '脚本组件' },
+                { name: 'query', description: '组件查询' },
+                { name: 'property', description: '组件属性' },
+                { name: 'event', description: '组件事件' }
             ]},
             { category: 'prefab', name: '预制体工具', tools: [
-                { name: 'createPrefabFromNode', description: '从节点创建预制体' },
-                { name: 'instantiatePrefab', description: '实例化预制体' },
-                { name: 'getPrefabInfo', description: '获取预制体信息' },
-                { name: 'savePrefab', description: '保存预制体' }
+                { name: 'browse', description: '预制体浏览' },
+                { name: 'lifecycle', description: '预制体生命周期' },
+                { name: 'instance', description: '预制体实例' },
+                { name: 'edit', description: '预制体编辑' }
+            ]},
+            { category: 'asset', name: '资源工具', tools: [
+                { name: 'manage', description: '资源管理' },
+                { name: 'analyze', description: '资源分析' },
+                { name: 'system', description: '资源系统' },
+                { name: 'query', description: '资源查询' },
+                { name: 'operations', description: '资源操作' },
+                { name: 'dependency', description: '资源依赖' },
+                { name: 'manifest', description: '资源清单' },
+                { name: 'compress', description: '资源压缩' }
             ]},
             { category: 'project', name: '项目工具', tools: [
-                { name: 'getProjectInfo', description: '获取项目信息' },
-                { name: 'getAssetList', description: '获取资源列表' },
-                { name: 'createAsset', description: '创建资源' },
-                { name: 'deleteAsset', description: '删除资源' }
+                { name: 'manage', description: '项目管理' },
+                { name: 'build_system', description: '构建系统' },
+                { name: 'preview', description: '预览服务器' }
             ]},
             { category: 'debug', name: '调试工具', tools: [
-                { name: 'getConsoleLogs', description: '获取控制台日志' },
-                { name: 'getPerformanceStats', description: '获取性能统计' },
-                { name: 'validateScene', description: '验证场景' },
-                { name: 'getErrorLogs', description: '获取错误日志' }
+                { name: 'console', description: '控制台' },
+                { name: 'logs', description: '日志' },
+                { name: 'system', description: '系统信息' },
+                { name: 'validation', description: '调试验证' }
             ]},
             { category: 'preferences', name: '偏好设置工具', tools: [
-                { name: 'getPreferences', description: '获取偏好设置' },
-                { name: 'setPreferences', description: '设置偏好设置' },
-                { name: 'resetPreferences', description: '重置偏好设置' }
+                { name: 'manage', description: '偏好管理' },
+                { name: 'global', description: '全局偏好' }
             ]},
             { category: 'server', name: '服务器工具', tools: [
-                { name: 'getServerStatus', description: '获取服务器状态' },
-                { name: 'getConnectedClients', description: '获取连接的客户端' },
-                { name: 'getServerLogs', description: '获取服务器日志' }
+                { name: 'info', description: '服务器信息' },
+                { name: 'batch', description: '批量调用' }
             ]},
             { category: 'broadcast', name: '广播工具', tools: [
-                { name: 'broadcastMessage', description: '广播消息' },
-                { name: 'getBroadcastHistory', description: '获取广播历史' }
-            ]},
-            { category: 'sceneAdvanced', name: '高级场景工具', tools: [
-                { name: 'optimizeScene', description: '优化场景' },
-                { name: 'analyzeScene', description: '分析场景' },
-                { name: 'batchOperation', description: '批量操作' }
+                { name: 'message', description: '广播消息' }
             ]},
             { category: 'sceneView', name: '场景视图工具', tools: [
-                { name: 'getViewportInfo', description: '获取视口信息' },
-                { name: 'setViewportCamera', description: '设置视口相机' },
-                { name: 'focusOnNode', description: '聚焦到节点' }
+                { name: 'control', description: '视图控制' },
+                { name: 'tools', description: '视图工具' }
             ]},
             { category: 'referenceImage', name: '参考图片工具', tools: [
-                { name: 'addReferenceImage', description: '添加参考图片' },
-                { name: 'removeReferenceImage', description: '移除参考图片' },
-                { name: 'getReferenceImages', description: '获取参考图片列表' }
-            ]},
-            { category: 'assetAdvanced', name: '高级资源工具', tools: [
-                { name: 'importAsset', description: '导入资源' },
-                { name: 'exportAsset', description: '导出资源' },
-                { name: 'processAsset', description: '处理资源' }
+                { name: 'manage', description: '参考图管理' },
+                { name: 'view', description: '参考图视图' }
             ]},
             { category: 'validation', name: '验证工具', tools: [
-                { name: 'validateProject', description: '验证项目' },
-                { name: 'validateAssets', description: '验证资源' },
-                { name: 'generateReport', description: '生成报告' }
+                { name: 'scene', description: '场景验证' },
+                { name: 'asset', description: '资源验证' },
+                { name: 'json', description: 'JSON验证' },
+                { name: 'request', description: '请求格式' }
             ]}
         ];
 

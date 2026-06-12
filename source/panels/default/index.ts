@@ -124,7 +124,7 @@ module.exports = Editor.Panel.define({
                             const settingsData = {
                                 port: settings.value.port,
                                 autoStart: settings.value.autoStart,
-                                debugLog: settings.value.debugLog,
+                                enableDebugLog: settings.value.debugLog,
                                 maxConnections: settings.value.maxConnections
                             };
                             
@@ -265,15 +265,14 @@ module.exports = Editor.Panel.define({
                             'node': '节点工具',
                             'component': '组件工具',
                             'prefab': '预制体工具',
+                            'asset': '资源工具',
                             'project': '项目工具',
                             'debug': '调试工具',
                             'preferences': '偏好设置工具',
                             'server': '服务器工具',
                             'broadcast': '广播工具',
-                            'sceneAdvanced': '高级场景工具',
                             'sceneView': '场景视图工具',
                             'referenceImage': '参考图片工具',
-                            'assetAdvanced': '高级资源工具',
                             'validation': '验证工具'
                         };
                         return categoryNames[category] || category;

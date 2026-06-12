@@ -16,6 +16,7 @@ export interface ToolDefinition {
     name: string;
     description: string;
     inputSchema: any;
+    xCocos?: ToolMeta;
 }
 
 export interface ToolResponse {
@@ -27,6 +28,14 @@ export interface ToolResponse {
     warning?: string;
     verificationData?: any;
     updatedProperties?: string[];
+    ok?: boolean;
+    code?: number;
+    summary?: string;
+    _meta?: {
+        tool?: string;
+        durationMs?: number;
+        timestamp?: string;
+    };
 }
 
 export interface NodeInfo {
@@ -124,6 +133,14 @@ export interface MCPClient {
 export interface ToolExecutor {
     getTools(): ToolDefinition[];
     execute(toolName: string, args: any): Promise<ToolResponse>;
+}
+
+export interface ToolMeta {
+    kind: 'read' | 'write';
+    destructive: boolean;
+    sideEffect: boolean;
+    cost: 'low' | 'medium' | 'high';
+    scope: string[];
 }
 
 // 工具配置管理相关接口

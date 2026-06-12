@@ -2,62 +2,7 @@ import { ToolDefinition, ToolResponse, ToolExecutor } from '../types';
 
 export class ServerTools implements ToolExecutor {
     getTools(): ToolDefinition[] {
-        return [
-            {
-                name: 'query_server_ip_list',
-                description: 'Query server IP list',
-                inputSchema: {
-                    type: 'object',
-                    properties: {}
-                }
-            },
-            {
-                name: 'query_sorted_server_ip_list',
-                description: 'Get sorted server IP list',
-                inputSchema: {
-                    type: 'object',
-                    properties: {}
-                }
-            },
-            {
-                name: 'query_server_port',
-                description: 'Query editor server current port',
-                inputSchema: {
-                    type: 'object',
-                    properties: {}
-                }
-            },
-            {
-                name: 'get_server_status',
-                description: 'Get comprehensive server status information',
-                inputSchema: {
-                    type: 'object',
-                    properties: {}
-                }
-            },
-            {
-                name: 'check_server_connectivity',
-                description: 'Check server connectivity and network status',
-                inputSchema: {
-                    type: 'object',
-                    properties: {
-                        timeout: {
-                            type: 'number',
-                            description: 'Timeout in milliseconds',
-                            default: 5000
-                        }
-                    }
-                }
-            },
-            {
-                name: 'get_network_interfaces',
-                description: 'Get available network interfaces',
-                inputSchema: {
-                    type: 'object',
-                    properties: {}
-                }
-            }
-        ];
+        return [];
     }
 
     async execute(toolName: string, args: any): Promise<ToolResponse> {
