@@ -1,454 +1,54 @@
+import * as crypto from 'crypto';
 import * as http from 'http';
 import * as url from 'url';
-import { v4 as uuidv4 } from 'uuid';
 import { MCPServerSettings, ServerStatus, MCPClient, ToolDefinition } from './types';
 import { ToolRegistry, ToolHandler } from './tools/tool-registry';
+import { formatToolsForProvider, ModelToolProvider } from './compat/model-tool-formats';
+import { MCPProtocolEngine, LATEST_PROTOCOL_VERSION, SUPPORTED_PROTOCOL_VERSIONS } from './mcp-protocol';
 
 export class MCPServer {
-    private settings: MCPServerSettings;
-    private registry: ToolRegistry;
     private httpServer: http.Server | null = null;
-    private clients: Map<string, MCPClient> = new Map();
+    private clients = new Map<string, MCPClient>();
     private toolsList: ToolDefinition[] = [];
-    private enabledTools: any[] = []; // 存储启用的工具列表
-    private activeRequests = 0;
-    private readonly maxRequestBodyBytes = 1024 * 1024; // 1MB 默认限制
-    private toolHandlers: Map<string, ToolHandler> = new Map();
+    private enabledTools: any[] = [];
+    private toolHandlers = new Map<string, ToolHandler>();
     private simplifiedToolsCache: any[] | null = null;
+    private activeRequests = 0;
+    private readonly maxRequestBodyBytes = 1024 * 1024;
+    private readonly protocol: MCPProtocolEngine;
 
-    constructor(settings: MCPServerSettings, registry: ToolRegistry) {
-        this.settings = settings;
-        this.registry = registry;
+    constructor(private settings: MCPServerSettings, private registry: ToolRegistry) {
         this.setupTools();
         this.registry.setToolCallExecutor(this.executeToolCall.bind(this));
+        this.protocol = new MCPProtocolEngine(
+            () => this.toolsList,
+            (name, args) => this.executeToolCall(name, args),
+            '1.4.0'
+        );
     }
 
-    public async start(): Promise<void> {
-        if (this.httpServer) {
-            console.log('[MCPServer] Server is already running');
-            return;
-        }
-
-        try {
-            console.log(`[MCPServer] Starting HTTP server on port ${this.settings.port}...`);
-            this.httpServer = http.createServer(this.handleHttpRequest.bind(this));
-
-            await new Promise<void>((resolve, reject) => {
-                this.httpServer!.listen(this.settings.port, '127.0.0.1', () => {
-                    console.log(`[MCPServer] ✅ HTTP server started successfully on http://127.0.0.1:${this.settings.port}`);
-                    console.log(`[MCPServer] Health check: http://127.0.0.1:${this.settings.port}/health`);
-                    console.log(`[MCPServer] MCP endpoint: http://127.0.0.1:${this.settings.port}/mcp`);
-                    resolve();
-                });
-                this.httpServer!.on('error', (err: any) => {
-                    console.error('[MCPServer] ❌ Failed to start server:', err);
-                    if (err.code === 'EADDRINUSE') {
-                        console.error(`[MCPServer] Port ${this.settings.port} is already in use. Please change the port in settings.`);
-                    }
-                    reject(err);
-                });
-            });
-
-            this.setupTools();
-            console.log('[MCPServer] 🚀 MCP Server is ready for connections');
-        } catch (error) {
-            console.error('[MCPServer] ❌ Failed to start server:', error);
-            throw error;
-        }
+    async start(): Promise<void> {
+        if (this.httpServer) return;
+        const bindAddress = this.settings.bindAddress || '127.0.0.1';
+        this.httpServer = http.createServer(this.handleHttpRequest.bind(this));
+        await new Promise<void>((resolve, reject) => {
+            this.httpServer!.listen(this.settings.port, bindAddress, resolve);
+            this.httpServer!.once('error', reject);
+        });
+        this.setupTools();
+        console.log(`[MCPServer] HTTP server: http://${bindAddress}:${this.settings.port}/mcp`);
     }
 
-    private setupTools(): void {
-        this.simplifiedToolsCache = null;
-        const runtime = this.registry.buildRuntime(this.enabledTools);
-        this.toolsList = runtime.toolsList;
-        this.toolHandlers = runtime.toolHandlers;
-        
-        console.log(`[MCPServer] Setup tools: ${this.toolsList.length} tools available`);
-    }
-
-    public getFilteredTools(enabledTools: any[]): ToolDefinition[] {
-        if (!enabledTools || enabledTools.length === 0) {
-            return this.toolsList; // 如果没有过滤配置，返回所有工具
-        }
-
-        const enabledToolNames = new Set(enabledTools.map(tool => `${tool.category}_${tool.name}`));
-        return this.toolsList.filter(tool => enabledToolNames.has(tool.name));
-    }
-
-    // Enforce enabled-tool routing via registry handler map.
-
-
-    public async executeToolCall(toolName: string, args: any): Promise<any> {
-        const handler = this.toolHandlers.get(toolName);
-        if (!handler) {
-            throw new Error(`Tool ${toolName} not found or disabled`);
-        }
-        return await handler.executor.execute(handler.method, args);
-    }
-
-    public getClients(): MCPClient[] {
-        return Array.from(this.clients.values());
-    }
-    public getAvailableTools(): ToolDefinition[] {
-        return this.toolsList;
-    }
-
-    public updateEnabledTools(enabledTools: any[]): void {
-        console.log(`[MCPServer] Updating enabled tools: ${enabledTools.length} tools`);
-        this.enabledTools = enabledTools;
-        this.setupTools(); // 重新设置工具列表
-    }
-
-    public getSettings(): MCPServerSettings {
-        return this.settings;
-    }
-
-    private async handleHttpRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-        const parsedUrl = url.parse(req.url || '', true);
-        const pathname = parsedUrl.pathname;
-
-        // Set CORS headers
-        const corsAllowed = this.applyCorsHeaders(req, res);
-        res.setHeader('Content-Type', 'application/json');
-
-        if (!corsAllowed) {
-            res.writeHead(403);
-            res.end(JSON.stringify({ error: 'Origin not allowed' }));
-            return;
-        }
-        
-        if (req.method === 'OPTIONS') {
-            res.writeHead(200);
-            res.end();
-            return;
-        }
-
-        // Basic concurrent request limit
-        if (this.settings.maxConnections > 0 && this.activeRequests >= this.settings.maxConnections) {
-            res.writeHead(503);
-            res.end(JSON.stringify({ error: 'Server busy, try again later' }));
-            return;
-        }
-
-        this.activeRequests++;
-        let finished = false;
-        const finalize = () => {
-            if (finished) return;
-            finished = true;
-            this.activeRequests = Math.max(0, this.activeRequests - 1);
-        };
-        res.once('finish', finalize);
-        res.once('close', finalize);
-        
-        try {
-            this.logDebug(`[MCPServer] ${req.method} ${pathname || ''}`);
-            if (pathname === '/mcp' && req.method === 'POST') {
-                await this.handleMCPRequest(req, res);
-            } else if (pathname === '/health' && req.method === 'GET') {
-                res.writeHead(200);
-                res.end(JSON.stringify({ status: 'ok', tools: this.toolsList.length }));
-            } else if (pathname?.startsWith('/api/') && req.method === 'POST') {
-                await this.handleSimpleAPIRequest(req, res, pathname);
-            } else if (pathname === '/api/tools' && req.method === 'GET') {
-                res.writeHead(200);
-                res.end(JSON.stringify({ tools: this.getSimplifiedToolsList() }));
-            } else {
-                res.writeHead(404);
-                res.end(JSON.stringify({ error: 'Not found' }));
-            }
-        } catch (error) {
-            console.error('HTTP request error:', error);
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: 'Internal server error' }));
-        }
-    }
-    
-    private async handleMCPRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-        try {
-            const body = await this.readRequestBody(req, this.maxRequestBodyBytes);
-            const payload = this.parseJsonBody(body);
-            const response = await this.handleMcpPayload(payload);
-            if (response === null) {
-                res.writeHead(204);
-                res.end();
-                return;
-            }
-            res.writeHead(200);
-            res.end(JSON.stringify(response));
-        } catch (error: any) {
-            if (this.isBodyTooLargeError(error)) {
-                res.writeHead(413);
-                res.end(JSON.stringify({ error: 'Request body too large' }));
-                return;
-            }
-            console.error('Error handling MCP request:', error);
-            res.writeHead(400);
-            res.end(JSON.stringify({
-                jsonrpc: '2.0',
-                id: null,
-                error: {
-                    code: -32700,
-                    message: `Parse error: ${error.message}`
-                }
-                }));
-        }
-    }
-
-    private async handleMcpPayload(payload: any): Promise<any | null> {
-        // Support JSON-RPC batch payloads and skip notification responses.
-        if (Array.isArray(payload)) {
-            if (payload.length === 0) {
-                return this.invalidRequestError(null);
-            }
-            const responses: any[] = [];
-            for (const message of payload) {
-                const response = await this.handleMessage(message);
-                if (response !== null) {
-                    responses.push(response);
-                }
-            }
-            return responses.length > 0 ? responses : null;
-        }
-
-        if (!payload || typeof payload !== 'object') {
-            return this.invalidRequestError(null);
-        }
-
-        return this.handleMessage(payload);
-    }
-
-    private async handleMessage(message: any): Promise<any | null> {
-        if (!message || typeof message !== 'object') {
-            return this.invalidRequestError(null);
-        }
-
-        const { id, method, params } = message;
-        const isNotification = id === undefined || id === null;
-
-        if (typeof method !== 'string') {
-            if (isNotification) {
-                return null;
-            }
-            return this.invalidRequestError(id ?? null);
-        }
-
-        try {
-            let result: any;
-
-            switch (method) {
-                case 'tools/list':
-                    result = { tools: this.getAvailableTools() };
-                    break;
-                case 'tools/call':
-                    if (!params || typeof params.name !== 'string') {
-                        throw new Error('Invalid params for tools/call');
-                    }
-                    const { name, arguments: args } = params;
-                    const start = Date.now();
-                    const toolResult = await this.executeToolCall(name, args);
-                    const normalized = this.normalizeToolResult(name, toolResult, Date.now() - start);
-                    result = { content: [{ type: 'text', text: JSON.stringify(normalized) }] };
-                    break;
-                case 'initialize':
-                    // MCP initialization
-                    result = {
-                        protocolVersion: '2024-11-05',
-                        capabilities: {
-                            tools: {}
-                        },
-                        serverInfo: {
-                            name: 'cocos-mcp-server',
-                            version: '1.0.0'
-                        }
-                    };
-                    break;
-                default:
-                    throw new Error(`Unknown method: ${method}`);
-            }
-
-            if (isNotification) {
-                return null;
-            }
-            return {
-                jsonrpc: '2.0',
-                id,
-                result
-            };
-        } catch (error: any) {
-            if (isNotification) {
-                return null;
-            }
-            return {
-                jsonrpc: '2.0',
-                id,
-                error: {
-                    code: -32603,
-                    message: error.message
-                }
-            };
-        }
-    }
-
-    private fixCommonJsonIssues(jsonStr: string): string {
-        let fixed = jsonStr;
-        
-        // Fix common escape character issues
-        fixed = fixed
-            // Fix unescaped quotes in strings
-            .replace(/([^\\])"([^"]*[^\\])"([^,}\]:])/g, '$1\\"$2\\"$3')
-            // Fix unescaped backslashes
-            .replace(/([^\\])\\([^"\\\/bfnrt])/g, '$1\\\\$2')
-            // Fix trailing commas
-            .replace(/,(\s*[}\]])/g, '$1')
-            // Fix single quotes (should be double quotes)
-            .replace(/'/g, '"')
-            // Fix common control characters
-            .replace(/\n/g, '\\n')
-            .replace(/\r/g, '\\r')
-            .replace(/\t/g, '\\t');
-        
-        return fixed;
-    }
-
-    public async stop(): Promise<void> {
+    async stop(): Promise<void> {
         if (this.httpServer) {
             const server = this.httpServer;
             this.httpServer = null;
-            await new Promise<void>((resolve) => {
-                server.close(() => resolve());
-            });
-            console.log('[MCPServer] HTTP server stopped');
+            await new Promise<void>((resolve) => server.close(() => resolve()));
         }
-
         this.clients.clear();
     }
 
-    public getStatus(): ServerStatus {
-        return {
-            running: !!this.httpServer,
-            port: this.settings.port,
-            clients: 0 // HTTP is stateless, no persistent clients
-        };
-    }
-
-    private async handleSimpleAPIRequest(req: http.IncomingMessage, res: http.ServerResponse, pathname: string): Promise<void> {
-        try {
-            const body = await this.readRequestBody(req, this.maxRequestBodyBytes);
-            // Extract tool name from path like /api/node/set_position
-            const pathParts = pathname.split('/').filter(p => p);
-            if (pathParts.length < 3) {
-                res.writeHead(400);
-                res.end(JSON.stringify({ error: 'Invalid API path. Use /api/{category}/{tool_name}' }));
-                return;
-            }
-
-            const category = pathParts[1];
-            const toolName = pathParts[2];
-            const fullToolName = `${category}_${toolName}`;
-
-            let params: any = {};
-            if (body && body.trim().length > 0) {
-                try {
-                    params = this.parseJsonBody(body);
-                } catch (parseError: any) {
-                    res.writeHead(400);
-                    res.end(JSON.stringify({
-                        error: 'Invalid JSON in request body',
-                        details: parseError.message,
-                        receivedBody: body.substring(0, 200)
-                    }));
-                    return;
-                }
-            }
-
-            // Execute tool
-            const start = Date.now();
-            const result = await this.executeToolCall(fullToolName, params);
-            const normalized = this.normalizeToolResult(fullToolName, result, Date.now() - start);
-
-            res.writeHead(200);
-            res.end(JSON.stringify({
-                success: true,
-                tool: fullToolName,
-                result: normalized
-            }));
-        } catch (error: any) {
-            if (this.isBodyTooLargeError(error)) {
-                res.writeHead(413);
-                res.end(JSON.stringify({ error: 'Request body too large' }));
-                return;
-            }
-            console.error('Simple API error:', error);
-            res.writeHead(500);
-            res.end(JSON.stringify({
-                success: false,
-                error: error.message,
-                tool: pathname
-            }));
-        }
-    }
-
-    private getSimplifiedToolsList(): any[] {
-        if (this.simplifiedToolsCache) {
-            return this.simplifiedToolsCache;
-        }
-
-        const simplified = this.toolsList.map(tool => {
-            const parts = tool.name.split('_');
-            const category = parts[0];
-            const toolName = parts.slice(1).join('_');
-            
-            return {
-                name: tool.name,
-                category: category,
-                toolName: toolName,
-                description: tool.description,
-                apiPath: `/api/${category}/${toolName}`,
-                curlExample: this.generateCurlExample(category, toolName, tool.inputSchema),
-                xCocos: (tool as any).xCocos
-            };
-        });
-        this.simplifiedToolsCache = simplified;
-        return simplified;
-    }
-
-    private generateCurlExample(category: string, toolName: string, schema: any): string {
-        // Generate sample parameters based on schema
-        const sampleParams = this.generateSampleParams(schema);
-        const jsonString = JSON.stringify(sampleParams, null, 2);
-        
-        return `curl -X POST http://127.0.0.1:${this.settings.port}/api/${category}/${toolName} \\
-  -H "Content-Type: application/json" \\
-  -d '${jsonString}'`;
-    }
-
-    private generateSampleParams(schema: any): any {
-        if (!schema || !schema.properties) return {};
-        
-        const sample: any = {};
-        for (const [key, prop] of Object.entries(schema.properties as any)) {
-            const propSchema = prop as any;
-            switch (propSchema.type) {
-                case 'string':
-                    sample[key] = propSchema.default || 'example_string';
-                    break;
-                case 'number':
-                    sample[key] = propSchema.default || 42;
-                    break;
-                case 'boolean':
-                    sample[key] = propSchema.default || true;
-                    break;
-                case 'object':
-                    sample[key] = propSchema.default || { x: 0, y: 0, z: 0 };
-                    break;
-                default:
-                    sample[key] = 'example_value';
-            }
-        }
-        return sample;
-    }
-
-    public async updateSettings(settings: MCPServerSettings): Promise<void> {
+    async updateSettings(settings: MCPServerSettings): Promise<void> {
         this.settings = settings;
         this.simplifiedToolsCache = null;
         if (this.httpServer) {
@@ -457,125 +57,226 @@ export class MCPServer {
         }
     }
 
-    private logDebug(message: string, ...args: any[]): void {
-        if (this.settings.enableDebugLog) {
-            console.log(message, ...args);
+    getStatus(): ServerStatus {
+        return { running: Boolean(this.httpServer), port: this.settings.port, clients: this.clients.size };
+    }
+
+    getClients(): MCPClient[] { return Array.from(this.clients.values()); }
+    getAvailableTools(): ToolDefinition[] { return this.toolsList; }
+    getSettings(): MCPServerSettings { return this.settings; }
+
+    getFilteredTools(enabledTools: any[]): ToolDefinition[] {
+        if (!enabledTools?.length) return this.toolsList;
+        const names = new Set(enabledTools.map((tool) => `${tool.category}_${tool.name}`));
+        return this.toolsList.filter((tool) => names.has(tool.name));
+    }
+
+    updateEnabledTools(enabledTools: any[]): void {
+        this.enabledTools = enabledTools || [];
+        this.setupTools();
+    }
+
+    async executeToolCall(toolName: string, args: any): Promise<any> {
+        const handler = this.toolHandlers.get(toolName);
+        if (!handler) throw new Error(`Tool ${toolName} not found or disabled`);
+        return handler.executor.execute(handler.method, args || {});
+    }
+
+    private setupTools(): void {
+        const runtime = this.registry.buildRuntime(this.enabledTools);
+        this.toolsList = runtime.toolsList;
+        this.toolHandlers = runtime.toolHandlers;
+        this.simplifiedToolsCache = null;
+    }
+
+    private async handleHttpRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+        const pathname = url.parse(req.url || '', true).pathname || '/';
+        if (!this.applyCorsHeaders(req, res)) return this.sendJson(res, 403, { error: 'Origin not allowed' });
+        if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
+
+        if (pathname === '/health' && req.method === 'GET') {
+            return this.sendJson(res, 200, {
+                status: 'ok', tools: this.toolsList.length,
+                protocolVersion: LATEST_PROTOCOL_VERSION,
+                supportedProtocolVersions: SUPPORTED_PROTOCOL_VERSIONS
+            });
         }
+        if (!this.isAuthorized(req)) {
+            res.setHeader('WWW-Authenticate', 'Bearer realm="cocos-mcp-server"');
+            return this.sendJson(res, 401, { error: 'Unauthorized' });
+        }
+        if (this.settings.maxConnections > 0 && this.activeRequests >= this.settings.maxConnections) {
+            return this.sendJson(res, 503, { error: 'Server busy, try again later' });
+        }
+
+        this.activeRequests++;
+        let finalized = false;
+        const finalize = () => {
+            if (finalized) return;
+            finalized = true;
+            this.activeRequests = Math.max(0, this.activeRequests - 1);
+        };
+        res.once('finish', finalize);
+        res.once('close', finalize);
+
+        try {
+            if (pathname === '/mcp') return await this.handleMcp(req, res);
+            if (pathname === '/manifest' && req.method === 'GET') return this.sendJson(res, 200, this.manifest());
+
+            const provider = this.resolveProvider(pathname);
+            if (provider && req.method === 'GET') {
+                return this.sendJson(res, 200, { provider, tools: formatToolsForProvider(provider, this.toolsList) });
+            }
+            if (pathname === '/v1/tools/call' && req.method === 'POST') return await this.handleUniversalCall(req, res);
+            if (pathname === '/api/tools' && req.method === 'GET') return this.sendJson(res, 200, { tools: this.getSimplifiedTools() });
+            if (pathname.startsWith('/api/') && req.method === 'POST') return await this.handleDirectCall(req, res, pathname);
+            return this.sendJson(res, 404, { error: 'Not found' });
+        } catch (error: any) {
+            if (!res.headersSent) {
+                const status = error?.code === 'ERR_BODY_TOO_LARGE' ? 413 : 500;
+                this.sendJson(res, status, { error: error?.message || String(error) });
+            } else res.end();
+        }
+    }
+
+    private async handleMcp(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+        const requested = this.protocolVersion(req);
+        if (requested && !SUPPORTED_PROTOCOL_VERSIONS.includes(requested)) {
+            return this.sendJson(res, 400, { error: `Unsupported MCP protocol version: ${requested}`, supportedProtocolVersions: SUPPORTED_PROTOCOL_VERSIONS });
+        }
+        res.setHeader('MCP-Protocol-Version', requested || LATEST_PROTOCOL_VERSION);
+
+        if (req.method === 'GET') {
+            res.setHeader('Allow', 'POST, DELETE');
+            return this.sendJson(res, 405, { error: 'This stateless server does not open a server-initiated SSE stream. Use POST /mcp.' });
+        }
+        if (req.method === 'DELETE') { res.writeHead(204); res.end(); return; }
+        if (req.method !== 'POST') {
+            res.setHeader('Allow', 'POST, DELETE');
+            return this.sendJson(res, 405, { error: 'Method not allowed' });
+        }
+
+        let payload: any;
+        try {
+            payload = JSON.parse(await this.readBody(req));
+        } catch (error: any) {
+            return this.sendJson(res, 400, { jsonrpc: '2.0', id: null, error: { code: -32700, message: `Parse error: ${error.message}` } });
+        }
+        const response = await this.protocol.handlePayload(payload);
+        if (response === null) { res.writeHead(202); res.end(); return; }
+        this.sendJson(res, 200, response);
+    }
+
+    private async handleUniversalCall(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+        const payload = JSON.parse(await this.readBody(req));
+        const functionPayload = payload?.function || payload;
+        const name = functionPayload?.name;
+        let args = functionPayload?.arguments ?? functionPayload?.input ?? {};
+        if (typeof args === 'string') args = JSON.parse(args);
+        if (typeof name !== 'string' || !name) return this.sendJson(res, 400, { error: 'Tool name is required' });
+        const result = await this.protocol.callTool(name, args);
+        this.sendJson(res, result.ok === false ? 400 : 200, result);
+    }
+
+    private async handleDirectCall(req: http.IncomingMessage, res: http.ServerResponse, pathname: string): Promise<void> {
+        const parts = pathname.split('/').filter(Boolean);
+        if (parts.length < 3) return this.sendJson(res, 400, { error: 'Use /api/{category}/{tool_name}' });
+        const name = `${parts[1]}_${parts.slice(2).join('_')}`;
+        const body = await this.readBody(req);
+        const result = await this.protocol.callTool(name, body.trim() ? JSON.parse(body) : {});
+        this.sendJson(res, result.ok === false ? 400 : 200, { success: result.ok !== false, tool: name, result });
+    }
+
+    private manifest(): any {
+        const base = `http://127.0.0.1:${this.settings.port}`;
+        return {
+            name: 'cocos-mcp-server', version: '1.4.0',
+            mcp: { transport: 'streamable-http', endpoint: `${base}/mcp`, protocolVersions: SUPPORTED_PROTOCOL_VERSIONS },
+            toolFormats: {
+                openaiResponses: `${base}/v1/tools/openai/responses`,
+                openaiChatCompletions: `${base}/v1/tools/openai/chat`,
+                anthropic: `${base}/v1/tools/anthropic`,
+                gemini: `${base}/v1/tools/gemini`
+            },
+            callEndpoint: `${base}/v1/tools/call`,
+            authentication: this.settings.authToken ? 'bearer' : 'none'
+        };
+    }
+
+    private resolveProvider(pathname: string): ModelToolProvider | null {
+        const providers: Record<string, ModelToolProvider> = {
+            '/v1/tools/openai/responses': 'openai-responses',
+            '/v1/tools/openai/chat': 'openai-chat',
+            '/v1/tools/anthropic': 'anthropic',
+            '/v1/tools/gemini': 'gemini'
+        };
+        return providers[pathname] || null;
+    }
+
+    private getSimplifiedTools(): any[] {
+        if (this.simplifiedToolsCache) return this.simplifiedToolsCache;
+        this.simplifiedToolsCache = this.toolsList.map((tool) => {
+            const parts = tool.name.split('_');
+            const category = parts.shift() || '';
+            const toolName = parts.join('_');
+            return { name: tool.name, category, toolName, description: tool.description, inputSchema: tool.inputSchema, apiPath: `/api/${category}/${toolName}`, xCocos: tool.xCocos };
+        });
+        return this.simplifiedToolsCache;
     }
 
     private applyCorsHeaders(req: http.IncomingMessage, res: http.ServerResponse): boolean {
-        const allowedOrigins = Array.isArray(this.settings.allowedOrigins) && this.settings.allowedOrigins.length > 0
-            ? this.settings.allowedOrigins
-            : ['*'];
+        const allowed = this.settings.allowedOrigins?.length ? this.settings.allowedOrigins : ['*'];
         const origin = req.headers.origin as string | undefined;
-
-        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-
-        if (allowedOrigins.includes('*')) {
-            res.setHeader('Access-Control-Allow-Origin', '*');
-            return true;
-        }
-
-        if (origin && allowedOrigins.includes(origin)) {
-            res.setHeader('Access-Control-Allow-Origin', origin);
-            res.setHeader('Vary', 'Origin');
-            return true;
-        }
-
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, MCP-Protocol-Version, Mcp-Session-Id, Last-Event-ID');
+        res.setHeader('Access-Control-Expose-Headers', 'MCP-Protocol-Version, Mcp-Session-Id');
+        if (allowed.includes('*')) { res.setHeader('Access-Control-Allow-Origin', '*'); return true; }
+        if (origin && allowed.includes(origin)) { res.setHeader('Access-Control-Allow-Origin', origin); res.setHeader('Vary', 'Origin'); return true; }
         return !origin;
     }
 
-    private async readRequestBody(req: http.IncomingMessage, maxBytes: number): Promise<string> {
-        return new Promise<string>((resolve, reject) => {
-            let body = '';
-            let totalBytes = 0;
+    private isAuthorized(req: http.IncomingMessage): boolean {
+        const expected = this.settings.authToken;
+        if (!expected) return true;
+        const header = req.headers.authorization || '';
+        const actual = header.startsWith('Bearer ') ? header.slice(7) : '';
+        if (!actual) return false;
+        const expectedBuffer = Buffer.from(expected);
+        const actualBuffer = Buffer.from(actual);
+        return expectedBuffer.length === actualBuffer.length && crypto.timingSafeEqual(expectedBuffer, actualBuffer);
+    }
 
-            req.on('data', (chunk) => {
-                totalBytes += chunk.length;
-                if (totalBytes > maxBytes) {
-                    const error: any = new Error(`Request body too large (limit ${maxBytes} bytes)`);
+    private protocolVersion(req: http.IncomingMessage): string | undefined {
+        const header = req.headers['mcp-protocol-version'];
+        return Array.isArray(header) ? header[0] : header;
+    }
+
+    private readBody(req: http.IncomingMessage): Promise<string> {
+        return new Promise((resolve, reject) => {
+            const chunks: Buffer[] = [];
+            let bytes = 0;
+            req.on('data', (chunk: Buffer | string) => {
+                const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+                bytes += buffer.length;
+                if (bytes > this.maxRequestBodyBytes) {
+                    const error: any = new Error('Request body too large');
                     error.code = 'ERR_BODY_TOO_LARGE';
                     reject(error);
                     req.destroy();
                     return;
                 }
-                body += chunk.toString();
+                chunks.push(buffer);
             });
-
-            req.on('end', () => resolve(body));
-            req.on('error', (err) => reject(err));
+            req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+            req.on('error', reject);
         });
     }
 
-    private parseJsonBody(body: string): any {
-        if (!body || body.trim().length === 0) {
-            return {};
+    private sendJson(res: http.ServerResponse, status: number, payload: any): void {
+        if (!res.headersSent) {
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.writeHead(status);
         }
-
-        try {
-            return JSON.parse(body);
-        } catch (parseError: any) {
-            const fixedBody = this.fixCommonJsonIssues(body);
-            try {
-                const parsed = JSON.parse(fixedBody);
-                this.logDebug('[MCPServer] Fixed JSON parsing issue');
-                return parsed;
-            } catch (secondError) {
-                throw new Error(`JSON parsing failed: ${parseError.message}`);
-            }
-        }
-    }
-
-    // Normalize tool responses into a consistent MCP-friendly shape.
-
-    private normalizeToolResult(toolName: string, toolResult: any, durationMs: number): any {
-        const meta = {
-            tool: toolName,
-            durationMs: durationMs,
-            timestamp: new Date().toISOString()
-        };
-
-        if (toolResult && typeof toolResult === 'object' && !Array.isArray(toolResult)) {
-            const normalized: any = { ...toolResult };
-            const success = typeof normalized.success === 'boolean' ? normalized.success : undefined;
-            normalized.ok = typeof normalized.ok === 'boolean' ? normalized.ok : (success !== undefined ? success : true);
-            normalized.code = typeof normalized.code === 'number' ? normalized.code : (normalized.ok ? 0 : -1);
-            if (!normalized.summary && typeof normalized.message === 'string') {
-                normalized.summary = normalized.message;
-            }
-            if (!normalized._meta) {
-                normalized._meta = meta;
-            } else {
-                normalized._meta = { ...meta, ...normalized._meta };
-            }
-            return normalized;
-        }
-
-        return {
-            success: true,
-            ok: true,
-            code: 0,
-            data: toolResult,
-            _meta: meta
-        };
-    }
-
-    private isBodyTooLargeError(error: any): boolean {
-        return Boolean(error && (error.code === 'ERR_BODY_TOO_LARGE' || String(error.message).includes('too large')));
-    }
-
-    private invalidRequestError(id: any): any {
-        return {
-            jsonrpc: '2.0',
-            id: id ?? null,
-            error: {
-                code: -32600,
-                message: 'Invalid Request'
-            }
-        };
+        res.end(JSON.stringify(payload));
     }
 }
-
-// HTTP transport doesn't need persistent connections
-// MCP over HTTP uses request-response pattern

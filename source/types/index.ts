@@ -4,6 +4,8 @@ export interface MCPServerSettings {
     enableDebugLog: boolean;
     allowedOrigins: string[];
     maxConnections: number;
+    bindAddress?: string;
+    authToken?: string;
 }
 
 export interface ServerStatus {
@@ -14,8 +16,10 @@ export interface ServerStatus {
 
 export interface ToolDefinition {
     name: string;
+    title?: string;
     description: string;
     inputSchema: any;
+    outputSchema?: any;
     xCocos?: ToolMeta;
 }
 
@@ -143,7 +147,6 @@ export interface ToolMeta {
     scope: string[];
 }
 
-// 工具配置管理相关接口
 export interface ToolConfig {
     category: string;
     name: string;
