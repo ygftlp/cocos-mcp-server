@@ -19,6 +19,14 @@ const nodeUuid = object({ nodeUuid: text('Node UUID') }, ['nodeUuid']);
 const prefabPath = object({ prefabPath: text('Prefab db:// URL') }, ['prefabPath']);
 const assetUrl = object({ url: text('Asset db:// URL') }, ['url']);
 const reflectedProperties = object({}, [], true);
+const touchPoint = object({
+    x: number('Touch X coordinate'),
+    y: number('Touch Y coordinate'),
+    radiusX: number('Touch radius X'),
+    radiusY: number('Touch radius Y'),
+    force: number('Touch force'),
+    id: integer('Touch point ID')
+}, ['x', 'y']);
 
 export const METHOD_PARAM_SCHEMAS: Record<string, JsonSchema> = {
     get_current_scene: empty,
@@ -138,6 +146,64 @@ export const METHOD_PARAM_SCHEMAS: Record<string, JsonSchema> = {
     get_build_settings: empty,
     open_build_panel: empty,
     check_builder_status: empty,
+
+    runtime_start: object({
+        buildPath: text('Absolute path or project-relative Cocos web build directory'),
+        browserPath: text('Optional Chrome, Edge, or Chromium executable path'),
+        headless: flag('Run browser without a visible window'),
+        width: integer('Browser viewport width'),
+        height: integer('Browser viewport height'),
+        host: text('Loopback host', { enum: ['127.0.0.1', 'localhost', '::1'] }),
+        port: integer('Optional local static-server port'),
+        startupTimeoutMs: integer('Startup timeout in milliseconds'),
+        extraBrowserArgs: strings('Additional safe Chromium command-line arguments')
+    }),
+    runtime_stop: empty,
+    runtime_status: empty,
+    runtime_reload: object({ ignoreCache: flag('Ignore browser cache') }),
+    runtime_evaluate: object({
+        expression: text('JavaScript expression evaluated in the game page'),
+        awaitPromise: flag('Await returned promises')
+    }, ['expression']),
+    runtime_wait_for: object({
+        expression: text('JavaScript expression that must become truthy'),
+        timeoutMs: integer('Maximum wait time'),
+        intervalMs: integer('Polling interval')
+    }, ['expression']),
+    runtime_screenshot: object({
+        format: text('Image format', { enum: ['png', 'jpeg', 'webp'] }),
+        quality: integer('JPEG or WebP quality from 1 to 100'),
+        filePath: text('Path relative to .cocos-mcp/runtime-artifacts'),
+        fullPage: flag('Capture the full page'),
+        returnBase64: flag('Include base64 image bytes in the MCP result')
+    }),
+    runtime_logs: object({
+        sinceSequence: integer('Return entries after this sequence number'),
+        clear: flag('Clear buffered logs after reading'),
+        levels: { type: 'array', items: { type: 'string', enum: ['debug', 'info', 'warning', 'error'] } },
+        source: text('Optional source substring filter'),
+        limit: integer('Maximum returned entries')
+    }),
+    runtime_mouse: object({
+        type: text('Mouse event type', { enum: ['move', 'down', 'up', 'click', 'wheel'] }),
+        x: number('Viewport X coordinate'),
+        y: number('Viewport Y coordinate'),
+        button: text('Mouse button', { enum: ['none', 'left', 'middle', 'right'] }),
+        clickCount: integer('Click count'),
+        deltaX: number('Horizontal wheel delta'),
+        deltaY: number('Vertical wheel delta')
+    }, ['type', 'x', 'y']),
+    runtime_keyboard: object({
+        type: text('Keyboard event type', { enum: ['keyDown', 'keyUp', 'char', 'press'] }),
+        key: text('Keyboard key value'),
+        code: text('Keyboard physical code'),
+        text: text('Optional generated text'),
+        modifiers: integer('CDP modifier bitmask')
+    }, ['type', 'key']),
+    runtime_touch: object({
+        type: text('Touch event type', { enum: ['touchStart', 'touchMove', 'touchEnd', 'tap'] }),
+        points: { type: 'array', items: touchPoint }
+    }, ['type', 'points']),
 
     get_project_logs: object({ lines: integer('Trailing line count'), filterKeyword: text('Substring filter'), logLevel: text('Log level') }),
     get_log_file_info: empty,
