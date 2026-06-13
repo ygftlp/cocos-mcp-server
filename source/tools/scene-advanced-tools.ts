@@ -1,286 +1,265 @@
-﻿import { ToolDefinition, ToolResponse, ToolExecutor } from '../types';
-// Slim MCP scene-advanced adapter: direct Editor API calls only.
+import { SceneAdvancedAdapter } from '../adapters/contracts/scene-advanced-adapter';
+import { selectCocosAdapter } from '../adapters/selector';
+import { ToolDefinition, ToolExecutor, ToolResponse } from '../types';
+
 export class SceneAdvancedTools implements ToolExecutor {
-    getTools(): ToolDefinition[] {
-        return [];
-    }
+    constructor(private readonly adapter: SceneAdvancedAdapter = selectCocosAdapter().sceneAdvanced) {}
+
+    getTools(): ToolDefinition[] { return []; }
 
     async execute(toolName: string, args: any): Promise<ToolResponse> {
         switch (toolName) {
-            case 'reset_node_property':
-                return await this.resetNodeProperty(args?.uuid, args?.path);
-            case 'move_array_element':
-                return await this.moveArrayElement(args?.uuid, args?.path, args?.target, args?.offset);
-            case 'remove_array_element':
-                return await this.removeArrayElement(args?.uuid, args?.path, args?.index);
-            case 'copy_node':
-                return await this.copyNode(args?.uuids);
-            case 'paste_node':
-                return await this.pasteNode(args?.target, args?.uuids, args?.keepWorldTransform);
-            case 'cut_node':
-                return await this.cutNode(args?.uuids);
-            case 'reset_node_transform':
-                return await this.resetNodeTransform(args?.uuid);
-            case 'reset_component':
-                return await this.resetComponent(args?.uuid);
-            case 'restore_prefab':
-                return await this.restorePrefab(args?.nodeUuid, args?.assetUuid);
-            case 'execute_component_method':
-                return await this.executeComponentMethod(args?.uuid, args?.name, args?.args);
-            case 'execute_scene_script':
-                return await this.executeSceneScript(args?.name, args?.method, args?.args);
-            case 'scene_snapshot':
-                return await this.sceneSnapshot();
-            case 'scene_snapshot_abort':
-                return await this.sceneSnapshotAbort();
-            case 'begin_undo_recording':
-                return await this.beginUndoRecording(args?.nodeUuid);
-            case 'end_undo_recording':
-                return await this.endUndoRecording(args?.undoId);
-            case 'cancel_undo_recording':
-                return await this.cancelUndoRecording(args?.undoId);
-            case 'soft_reload_scene':
-                return await this.softReloadScene();
-            case 'query_scene_ready':
-                return await this.querySceneReady();
-            case 'query_scene_dirty':
-                return await this.querySceneDirty();
-            case 'query_scene_classes':
-                return await this.querySceneClasses(args?.extends);
-            case 'query_scene_components':
-                return await this.querySceneComponents();
-            case 'query_component_has_script':
-                return await this.queryComponentHasScript(args?.className);
-            case 'query_nodes_by_asset_uuid':
-                return await this.queryNodesByAssetUuid(args?.assetUuid);
-            default:
-                throw new Error(`Unknown tool: ${toolName}`);
+            case 'reset_node_property': return this.resetNodeProperty(args?.uuid, args?.path);
+            case 'move_array_element': return this.moveArrayElement(args?.uuid, args?.path, args?.target, args?.offset);
+            case 'remove_array_element': return this.removeArrayElement(args?.uuid, args?.path, args?.index);
+            case 'copy_node': return this.copyNode(args?.uuids);
+            case 'paste_node': return this.pasteNode(args?.target, args?.uuids, args?.keepWorldTransform);
+            case 'cut_node': return this.cutNode(args?.uuids);
+            case 'reset_node_transform': return this.resetNodeTransform(args?.uuid);
+            case 'reset_component': return this.resetComponent(args?.uuid);
+            case 'restore_prefab': return this.restorePrefab(args?.nodeUuid, args?.assetUuid);
+            case 'execute_component_method': return this.executeComponentMethod(args?.uuid, args?.name, args?.args);
+            case 'execute_scene_script': return this.executeSceneScript(args?.name, args?.method, args?.args);
+            case 'scene_snapshot': return this.sceneSnapshot();
+            case 'scene_snapshot_abort': return this.sceneSnapshotAbort();
+            case 'begin_undo_recording': return this.beginUndoRecording(args?.nodeUuid);
+            case 'end_undo_recording': return this.endUndoRecording(args?.undoId);
+            case 'cancel_undo_recording': return this.cancelUndoRecording(args?.undoId);
+            case 'soft_reload_scene': return this.softReloadScene();
+            case 'query_scene_ready': return this.querySceneReady();
+            case 'query_scene_dirty': return this.querySceneDirty();
+            case 'query_scene_classes': return this.querySceneClasses(args?.extends);
+            case 'query_scene_components': return this.querySceneComponents();
+            case 'query_component_has_script': return this.queryComponentHasScript(args?.className);
+            case 'query_nodes_by_asset_uuid': return this.queryNodesByAssetUuid(args?.assetUuid);
+            default: throw new Error(`Unknown tool: ${toolName}`);
         }
+    }
+
+    private failure(error: any): ToolResponse {
+        return { success: false, error: error?.message || String(error) };
     }
 
     private async resetNodeProperty(uuid: string, path: string): Promise<ToolResponse> {
         if (!uuid || !path) return { success: false, error: 'Missing uuid or path' };
         try {
-            await Editor.Message.request('scene', 'reset-property', { uuid, path, dump: { value: null } });
+            await this.adapter.resetProperty(uuid, path);
             return { success: true, data: { uuid, path } };
-        } catch (err: any) {
-            return { success: false, error: err?.message || String(err) };
+        } catch (error: any) {
+            return this.failure(error);
         }
     }
 
     private async moveArrayElement(uuid: string, path: string, target: number, offset: number): Promise<ToolResponse> {
         if (!uuid || !path) return { success: false, error: 'Missing uuid or path' };
+        if (!Number.isInteger(target) || !Number.isInteger(offset)) {
+            return { success: false, error: 'target and offset must be integers' };
+        }
         try {
-            await Editor.Message.request('scene', 'move-array-element', { uuid, path, target, offset });
+            await this.adapter.moveArrayElement({ uuid, path, target, offset });
             return { success: true, data: { uuid, path, target, offset } };
-        } catch (err: any) {
-            return { success: false, error: err?.message || String(err) };
+        } catch (error: any) {
+            return this.failure(error);
         }
     }
 
     private async removeArrayElement(uuid: string, path: string, index: number): Promise<ToolResponse> {
         if (!uuid || !path) return { success: false, error: 'Missing uuid or path' };
+        if (!Number.isInteger(index) || index < 0) return { success: false, error: 'index must be a non-negative integer' };
         try {
-            await Editor.Message.request('scene', 'remove-array-element', { uuid, path, index });
+            await this.adapter.removeArrayElement({ uuid, path, index });
             return { success: true, data: { uuid, path, index } };
-        } catch (err: any) {
-            return { success: false, error: err?.message || String(err) };
+        } catch (error: any) {
+            return this.failure(error);
         }
     }
 
     private async copyNode(uuids: string | string[]): Promise<ToolResponse> {
-        if (!uuids) return { success: false, error: 'Missing uuids' };
+        if (!uuids || (Array.isArray(uuids) && uuids.length === 0)) return { success: false, error: 'Missing uuids' };
         try {
-            const result = await Editor.Message.request('scene', 'copy-node', uuids);
+            const result = await this.adapter.copyNode(uuids);
             return { success: true, data: { copiedUuids: result } };
-        } catch (err: any) {
-            return { success: false, error: err?.message || String(err) };
+        } catch (error: any) {
+            return this.failure(error);
         }
     }
 
-    private async pasteNode(target: string, uuids: string | string[], keepWorldTransform: boolean = false): Promise<ToolResponse> {
+    private async pasteNode(target: string, uuids: string | string[] | undefined, keepWorldTransform = false): Promise<ToolResponse> {
         if (!target) return { success: false, error: 'Missing target' };
         try {
-            const result = await Editor.Message.request('scene', 'paste-node', { target, uuids, keepWorldTransform });
+            const result = await this.adapter.pasteNode({ target, uuids, keepWorldTransform: Boolean(keepWorldTransform) });
             return { success: true, data: { newUuids: result } };
-        } catch (err: any) {
-            return { success: false, error: err?.message || String(err) };
+        } catch (error: any) {
+            return this.failure(error);
         }
     }
 
     private async cutNode(uuids: string | string[]): Promise<ToolResponse> {
-        if (!uuids) return { success: false, error: 'Missing uuids' };
+        if (!uuids || (Array.isArray(uuids) && uuids.length === 0)) return { success: false, error: 'Missing uuids' };
         try {
-            const result = await Editor.Message.request('scene', 'cut-node', uuids);
+            const result = await this.adapter.cutNode(uuids);
             return { success: true, data: { cutUuids: result } };
-        } catch (err: any) {
-            return { success: false, error: err?.message || String(err) };
+        } catch (error: any) {
+            return this.failure(error);
         }
     }
 
     private async resetNodeTransform(uuid: string): Promise<ToolResponse> {
         if (!uuid) return { success: false, error: 'Missing uuid' };
         try {
-            await Editor.Message.request('scene', 'reset-node', { uuid });
+            await this.adapter.resetNode(uuid);
             return { success: true, data: { uuid } };
-        } catch (err: any) {
-            return { success: false, error: err?.message || String(err) };
+        } catch (error: any) {
+            return this.failure(error);
         }
     }
 
     private async resetComponent(uuid: string): Promise<ToolResponse> {
         if (!uuid) return { success: false, error: 'Missing uuid' };
         try {
-            await Editor.Message.request('scene', 'reset-component', { uuid });
+            await this.adapter.resetComponent(uuid);
             return { success: true, data: { uuid } };
-        } catch (err: any) {
-            return { success: false, error: err?.message || String(err) };
+        } catch (error: any) {
+            return this.failure(error);
         }
     }
 
     private async restorePrefab(nodeUuid: string, assetUuid: string): Promise<ToolResponse> {
         if (!nodeUuid || !assetUuid) return { success: false, error: 'Missing nodeUuid or assetUuid' };
         try {
-            await (Editor.Message.request as any)('scene', 'restore-prefab', nodeUuid, assetUuid);
+            await this.adapter.restorePrefab(nodeUuid, assetUuid);
             return { success: true, data: { nodeUuid, assetUuid } };
-        } catch (err: any) {
-            return { success: false, error: err?.message || String(err) };
+        } catch (error: any) {
+            return this.failure(error);
         }
     }
 
     private async executeComponentMethod(uuid: string, name: string, args: any[] = []): Promise<ToolResponse> {
         if (!uuid || !name) return { success: false, error: 'Missing uuid or name' };
         try {
-            const result = await Editor.Message.request('scene', 'execute-component-method', { uuid, name, args });
+            const result = await this.adapter.executeComponentMethod(uuid, name, Array.isArray(args) ? args : []);
             return { success: true, data: { result } };
-        } catch (err: any) {
-            return { success: false, error: err?.message || String(err) };
+        } catch (error: any) {
+            return this.failure(error);
         }
     }
-
-    // Thin wrapper around `execute-scene-script`.
 
     private async executeSceneScript(name: string, method: string, args: any[] = []): Promise<ToolResponse> {
         if (!name || !method) return { success: false, error: 'Missing name or method' };
         try {
-            const result = await Editor.Message.request('scene', 'execute-scene-script', { name, method, args });
+            const result = await this.adapter.executeSceneScript(name, method, Array.isArray(args) ? args : []);
             return { success: true, data: result };
-        } catch (err: any) {
-            return { success: false, error: err?.message || String(err) };
+        } catch (error: any) {
+            return this.failure(error);
         }
     }
 
     private async sceneSnapshot(): Promise<ToolResponse> {
         try {
-            await Editor.Message.request('scene', 'snapshot');
+            await this.adapter.snapshot();
             return { success: true };
-        } catch (err: any) {
-            return { success: false, error: err?.message || String(err) };
+        } catch (error: any) {
+            return this.failure(error);
         }
     }
 
     private async sceneSnapshotAbort(): Promise<ToolResponse> {
         try {
-            await Editor.Message.request('scene', 'snapshot-abort');
+            await this.adapter.abortSnapshot();
             return { success: true };
-        } catch (err: any) {
-            return { success: false, error: err?.message || String(err) };
+        } catch (error: any) {
+            return this.failure(error);
         }
     }
 
     private async beginUndoRecording(nodeUuid: string): Promise<ToolResponse> {
         if (!nodeUuid) return { success: false, error: 'Missing nodeUuid' };
         try {
-            const undoId = await Editor.Message.request('scene', 'begin-recording', nodeUuid);
+            const undoId = await this.adapter.beginRecording(nodeUuid);
             return { success: true, data: { undoId } };
-        } catch (err: any) {
-            return { success: false, error: err?.message || String(err) };
+        } catch (error: any) {
+            return this.failure(error);
         }
     }
 
     private async endUndoRecording(undoId: string): Promise<ToolResponse> {
         if (!undoId) return { success: false, error: 'Missing undoId' };
         try {
-            await Editor.Message.request('scene', 'end-recording', undoId);
+            await this.adapter.endRecording(undoId);
             return { success: true };
-        } catch (err: any) {
-            return { success: false, error: err?.message || String(err) };
+        } catch (error: any) {
+            return this.failure(error);
         }
     }
 
     private async cancelUndoRecording(undoId: string): Promise<ToolResponse> {
         if (!undoId) return { success: false, error: 'Missing undoId' };
         try {
-            await Editor.Message.request('scene', 'cancel-recording', undoId);
+            await this.adapter.cancelRecording(undoId);
             return { success: true };
-        } catch (err: any) {
-            return { success: false, error: err?.message || String(err) };
+        } catch (error: any) {
+            return this.failure(error);
         }
     }
 
     private async softReloadScene(): Promise<ToolResponse> {
         try {
-            await Editor.Message.request('scene', 'soft-reload');
+            await this.adapter.softReload();
             return { success: true };
-        } catch (err: any) {
-            return { success: false, error: err?.message || String(err) };
+        } catch (error: any) {
+            return this.failure(error);
         }
     }
 
     private async querySceneReady(): Promise<ToolResponse> {
         try {
-            const ready = await Editor.Message.request('scene', 'query-is-ready');
-            return { success: true, data: { ready } };
-        } catch (err: any) {
-            return { success: false, error: err?.message || String(err) };
+            return { success: true, data: { ready: await this.adapter.queryReady() } };
+        } catch (error: any) {
+            return this.failure(error);
         }
     }
 
     private async querySceneDirty(): Promise<ToolResponse> {
         try {
-            const dirty = await Editor.Message.request('scene', 'query-dirty');
-            return { success: true, data: { dirty } };
-        } catch (err: any) {
-            return { success: false, error: err?.message || String(err) };
+            return { success: true, data: { dirty: await this.adapter.queryDirty() } };
+        } catch (error: any) {
+            return this.failure(error);
         }
     }
 
     private async querySceneClasses(extendsClass?: string): Promise<ToolResponse> {
         try {
-            const options = extendsClass ? { extends: extendsClass } : {};
-            const classes = await Editor.Message.request('scene', 'query-classes', options);
-            return { success: true, data: { classes } };
-        } catch (err: any) {
-            return { success: false, error: err?.message || String(err) };
+            return { success: true, data: { classes: await this.adapter.queryClasses(extendsClass) } };
+        } catch (error: any) {
+            return this.failure(error);
         }
     }
 
     private async querySceneComponents(): Promise<ToolResponse> {
         try {
-            const components = await Editor.Message.request('scene', 'query-components');
-            return { success: true, data: { components } };
-        } catch (err: any) {
-            return { success: false, error: err?.message || String(err) };
+            return { success: true, data: { components: await this.adapter.queryComponents() } };
+        } catch (error: any) {
+            return this.failure(error);
         }
     }
 
     private async queryComponentHasScript(className: string): Promise<ToolResponse> {
         if (!className) return { success: false, error: 'Missing className' };
         try {
-            const hasScript = await Editor.Message.request('scene', 'query-component-has-script', className);
+            const hasScript = await this.adapter.queryComponentHasScript(className);
             return { success: true, data: { className, hasScript } };
-        } catch (err: any) {
-            return { success: false, error: err?.message || String(err) };
+        } catch (error: any) {
+            return this.failure(error);
         }
     }
 
     private async queryNodesByAssetUuid(assetUuid: string): Promise<ToolResponse> {
         if (!assetUuid) return { success: false, error: 'Missing assetUuid' };
         try {
-            const nodeUuids = await Editor.Message.request('scene', 'query-nodes-by-asset-uuid', assetUuid);
+            const nodeUuids = await this.adapter.queryNodesByAssetUuid(assetUuid);
             return { success: true, data: { assetUuid, nodeUuids } };
-        } catch (err: any) {
-            return { success: false, error: err?.message || String(err) };
+        } catch (error: any) {
+            return this.failure(error);
         }
     }
 }
