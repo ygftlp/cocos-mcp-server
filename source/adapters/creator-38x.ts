@@ -12,6 +12,10 @@ import { Creator38xSceneAdvancedAdapter } from './creator-38x/scene-advanced-ada
 import { Creator38xSceneAdapter } from './creator-38x/scene-adapter';
 import { Creator38xUIAdapter } from './creator-38x/ui-adapter';
 
+function currentProjectPath(): string {
+    return typeof Editor !== 'undefined' && Editor.Project?.path ? Editor.Project.path : process.cwd();
+}
+
 export class Creator38xAdapter extends BaseCocosAdapter {
     static supports(version: ParsedCocosVersion): boolean {
         return version.major === 3 && version.minor === 8 && (version.patch || 0) >= 6;
@@ -37,7 +41,7 @@ export class Creator38xAdapter extends BaseCocosAdapter {
             prefab: new Creator38xPrefabAdapter(),
             build: new Creator38xBuildAdapter(),
             project: new Creator38xProjectAdapter(),
-            runtime: new Creator38xRuntimeAdapter()
+            runtime: new Creator38xRuntimeAdapter(currentProjectPath())
         });
     }
 }
