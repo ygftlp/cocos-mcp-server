@@ -1,9 +1,11 @@
 'use strict';
 
 const assert = require('assert');
+const path = require('path');
 
 global.Editor = global.Editor || {
-    Project: { path: process.cwd(), name: 'test-project', uuid: 'test-project' },
+    Project: { path: path.join(process.cwd(), '.tmp-test-project'), name: 'test-project', uuid: 'test-project' },
+    App: { path: process.cwd() },
     Message: {
         request: async () => { throw new Error('Editor API is not available in unit tests'); },
         send: () => undefined
@@ -14,6 +16,7 @@ global.Editor = global.Editor || {
 
 const { ToolRegistry } = require('../dist/tools/tool-registry');
 const { ServerTools } = require('../dist/tools/server-tools');
+const { GameProjectTools } = require('../dist/tools/game-project-tools');
 const { buildActionSchema } = require('../dist/tools/core-action-utils');
 const { reconcileTools } = require('../dist/tools/tool-manager');
 const { normalizeSettingsData } = require('../dist/settings');
@@ -24,6 +27,7 @@ async function main() {
     assert.strictEqual(registry.buildRuntime([]).toolsList.length, 0, 'empty filter must disable every tool');
 
     const toolNames = registry.listToolConfigs().map((tool) => `${tool.category}_${tool.name}`);
+    assert.ok(toolNames.includes('project_create_game'), 'complete game composition tool must be public');
     assert.ok(!toolNames.some((name) => name.startsWith('broadcast_')), 'simulated broadcast tools must not be public');
     assert.ok(!toolNames.includes('project_preview'), 'unsupported preview server tool must not be public');
     assert.ok(!toolNames.includes('debug_console'), 'placeholder console capture tool must not be public');
@@ -32,7 +36,7 @@ async function main() {
 
     const available = [
         { category: 'node', name: 'query', enabled: true, description: 'query' },
-        { category: 'project', name: 'quick_start', enabled: true, description: 'quick start' }
+        { category: 'project', name: 'create_game', enabled: true, description: 'complete game' }
     ];
     const migrated = reconcileTools([
         { category: 'node', name: 'query', enabled: false, description: 'old query' }
@@ -79,6 +83,39 @@ async function main() {
     const settings = normalizeSettingsData({ port: 3000, allowedOrigins: [] });
     assert.deepStrictEqual(settings.allowedOrigins, ['http://127.0.0.1:0']);
     assert.ok(typeof settings.authToken === 'string' && settings.authToken.length >= 32, 'an auth token must be generated');
+
+    const gameTools = new GameProjectTools();
+    const playablePlan = await gameTools.execute('create_game', {
+        template: 'arcade-clicker-2d',
+        projectName: 'Regression Game',
+        dryRun: true
+    });
+    assert.strictEqual(playablePlan.success, true);
+    assert.strictEqual(playablePlan.data.template, 'arcade-clicker-2d');
+    assert.strictEqual(playablePlan.data.files.length, 3);
+    assert.strictEqual(playablePlan.data.nodes.length, 2);
+    assert.strictEqual(playablePlan.data.sceneUrl, 'db://assets/game/scenes/Main.scene');
+
+    const customPlan = await gameTools.execute('create_game', {
+        template: 'custom',
+        dryRun: true,
+        blueprint: {
+            files: [{ path: 'scripts/Entry.ts', content: 'export const ready = true;\n' }],
+            nodes: [{ id: 'root', name: 'Root' }]
+        }
+    });
+    assert.strictEqual(customPlan.success, true);
+    assert.strictEqual(customPlan.data.template, 'custom');
+
+    const traversal = await gameTools.execute('create_game', {
+        template: 'custom',
+        dryRun: true,
+        blueprint: {
+            files: [{ path: '../escape.ts', content: 'x' }],
+            nodes: [{ id: 'root', name: 'Root' }]
+        }
+    });
+    assert.strictEqual(traversal.success, false, 'custom blueprint must reject file traversal');
 
     console.log('Regression tests passed.');
 }
