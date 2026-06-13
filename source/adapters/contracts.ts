@@ -4,6 +4,7 @@ import { ComponentAdapter } from './contracts/component-adapter';
 import { NodeAdapter } from './contracts/node-adapter';
 import { PrefabAdapter } from './contracts/prefab-adapter';
 import { ProjectAdapter } from './contracts/project-adapter';
+import { SceneAdvancedAdapter } from './contracts/scene-advanced-adapter';
 import { SceneAdapter } from './contracts/scene-adapter';
 import { UIAdapter } from './contracts/ui-adapter';
 
@@ -33,6 +34,7 @@ export interface CocosAdapter {
     readonly profile: CocosCompatibilityProfile;
     readonly node: NodeAdapter;
     readonly scene: SceneAdapter;
+    readonly sceneAdvanced: SceneAdvancedAdapter;
     readonly component: ComponentAdapter;
     readonly ui: UIAdapter;
     readonly asset: AssetAdapter;
