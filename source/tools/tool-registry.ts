@@ -38,7 +38,7 @@ export class ToolRegistry {
             node: new NodeCoreTools(adapter.node),
             component: new ComponentCoreTools(adapter.component),
             ui: new UICoreTools(),
-            prefab: new PrefabCoreTools(),
+            prefab: new PrefabCoreTools(adapter),
             asset: new AssetCoreTools(adapter),
             project: new ProjectCoreTools(adapter),
             debug: new DebugCoreTools(),
