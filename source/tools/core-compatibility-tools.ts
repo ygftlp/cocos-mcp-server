@@ -54,18 +54,21 @@ export class CompatibilityCoreTools implements ToolExecutor {
             return { success: true, data: { ...this.adapter.profile } };
         }
         if (toolName === 'check') {
-            const requested = Array.isArray(args?.capabilities)
-                ? Array.from(new Set(args.capabilities.filter((item: any) => typeof item === 'string' && item.trim()).map((item: string) => item.trim())))
+            const values: string[] = Array.isArray(args?.capabilities)
+                ? args.capabilities
+                    .filter((item: unknown): item is string => typeof item === 'string' && item.trim().length > 0)
+                    .map((item: string) => item.trim())
                 : [];
+            const requested: string[] = Array.from(new Set<string>(values));
             if (!requested.length) return { success: false, error: 'capabilities must be a non-empty string array' };
-            const missing = requested.filter((capability: string) => !capabilityEnabled(this.adapter.profile, capability));
+            const missing = requested.filter((capability) => !capabilityEnabled(this.adapter.profile, capability));
             return {
                 success: missing.length === 0,
                 data: {
                     adapterId: this.adapter.profile.adapterId,
                     creatorVersion: this.adapter.profile.creatorVersion,
                     requested,
-                    supported: requested.filter((capability: string) => !missing.includes(capability)),
+                    supported: requested.filter((capability) => !missing.includes(capability)),
                     missing
                 },
                 ...(missing.length ? { error: `Missing capabilities: ${missing.join(', ')}` } : {})
