@@ -2,6 +2,7 @@ import { AssetAdapter, AssetMutationOptions } from './contracts/asset-adapter';
 import { BuildAdapter } from './contracts/build-adapter';
 import { ComponentAdapter, SetComponentPropertyRequest } from './contracts/component-adapter';
 import { CreateNodeRequest, NodeAdapter, SetNodeParentRequest, SetNodePropertyRequest } from './contracts/node-adapter';
+import { PrefabAdapter } from './contracts/prefab-adapter';
 import { ProjectAdapter, ProjectDescriptor } from './contracts/project-adapter';
 import { CreateSceneRequest, SceneAdapter } from './contracts/scene-adapter';
 import { UIAdapter, UIEventHandlerInput, UIEventMode } from './contracts/ui-adapter';
@@ -60,7 +61,7 @@ export class UnavailableUIAdapter implements UIAdapter {
 
 export class UnavailableAssetAdapter implements AssetAdapter {
     refreshAsset(_url: string): Promise<void> { return rejected('Asset'); }
-    importAsset(_sourcePath: string, _targetUrl: string): Promise<any> { return rejected('Asset'); }
+    importAsset(_sourcePath: string, _targetUrl: string, _options?: AssetMutationOptions): Promise<any> { return rejected('Asset'); }
     queryAssetInfo(_url: string): Promise<any | null> { return rejected('Asset'); }
     queryAssets(_pattern: string): Promise<any[]> { return rejected('Asset'); }
     createAsset(_url: string, _content: any, _options?: AssetMutationOptions): Promise<any> { return rejected('Asset'); }
@@ -68,10 +69,23 @@ export class UnavailableAssetAdapter implements AssetAdapter {
     moveAsset(_source: string, _target: string, _options?: AssetMutationOptions): Promise<any> { return rejected('Asset'); }
     deleteAsset(_url: string): Promise<void> { return rejected('Asset'); }
     saveAsset(_url: string, _content: string): Promise<any> { return rejected('Asset'); }
+    readAsset(_url: string): Promise<string> { return rejected('Asset'); }
+    saveAssetMeta(_urlOrUuid: string, _content: string): Promise<any> { return rejected('Asset'); }
+    generateAvailableUrl(_url: string): Promise<string> { return rejected('Asset'); }
+    queryReady(): Promise<boolean> { return rejected('Asset'); }
+    openAsset(_urlOrUuid: string): Promise<void> { return rejected('Asset'); }
     reimportAsset(_url: string): Promise<void> { return rejected('Asset'); }
     queryPath(_url: string): Promise<string | null> { return rejected('Asset'); }
     queryUuid(_url: string): Promise<string | null> { return rejected('Asset'); }
     queryUrl(_uuid: string): Promise<string | null> { return rejected('Asset'); }
+}
+
+export class UnavailablePrefabAdapter implements PrefabAdapter {
+    loadAsset(_uuid: string): Promise<any> { return rejected('Prefab'); }
+    createFromNode(_nodeUuid: string, _prefabPath: string): Promise<any> { return rejected('Prefab'); }
+    apply(_nodeUuid: string, _prefabUuid: string): Promise<void> { return rejected('Prefab'); }
+    revert(_nodeUuid: string): Promise<void> { return rejected('Prefab'); }
+    restoreNode(_nodeUuid: string, _assetUuid: string): Promise<void> { return rejected('Prefab'); }
 }
 
 export class UnavailableBuildAdapter implements BuildAdapter {
