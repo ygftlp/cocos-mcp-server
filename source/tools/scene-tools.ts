@@ -1,8 +1,9 @@
 import { SceneAdapter } from '../adapters/contracts/scene-adapter';
+import { selectCocosAdapter } from '../adapters/selector';
 import { ToolDefinition, ToolResponse, ToolExecutor, SceneInfo } from '../types';
 
 export class SceneTools implements ToolExecutor {
-    constructor(private readonly adapter: SceneAdapter) {}
+    constructor(private readonly adapter: SceneAdapter = selectCocosAdapter().scene) {}
 
     getTools(): ToolDefinition[] { return []; }
 
