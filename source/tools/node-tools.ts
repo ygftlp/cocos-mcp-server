@@ -1,7 +1,10 @@
+import { NodeAdapter } from '../adapters/contracts/node-adapter';
 import { ToolDefinition, ToolResponse, ToolExecutor, NodeInfo } from '../types';
 
-// Model-facing node adapter. Every Editor response is normalized into plain JSON.
+// Model-facing node adapter. Every version-specific Editor response is normalized into plain JSON.
 export class NodeTools implements ToolExecutor {
+    constructor(private readonly adapter: NodeAdapter) {}
+
     getTools(): ToolDefinition[] {
         return [];
     }
@@ -21,10 +24,6 @@ export class NodeTools implements ToolExecutor {
             case 'detect_node_type': return this.detectNodeType(args?.uuid);
             default: throw new Error(`Unknown tool: ${toolName}`);
         }
-    }
-
-    private request(channel: string, message: string, ...args: any[]): Promise<any> {
-        return (Editor.Message.request as any)(channel, message, ...args);
     }
 
     private unwrap<T = any>(value: any, fallback?: T): T {
@@ -58,22 +57,22 @@ export class NodeTools implements ToolExecutor {
             const name = typeof args.name === 'string' && args.name.trim() ? args.name.trim() : 'Node';
             let assetUuid = typeof args.assetUuid === 'string' ? args.assetUuid : undefined;
             if (!assetUuid && args.assetPath) {
-                const assetInfo: any = await this.request('asset-db', 'query-asset-info', args.assetPath);
+                const assetInfo = await this.adapter.queryAssetInfo(args.assetPath);
                 assetUuid = this.uuidOf(assetInfo?.uuid) || undefined;
                 if (!assetUuid) return { success: false, error: `Asset not found: ${args.assetPath}` };
             }
 
-            const options: Record<string, any> = { name };
-            if (args.parentUuid) options.parent = args.parentUuid;
+            const request: any = { name };
+            if (args.parentUuid) request.parent = args.parentUuid;
             if (assetUuid) {
-                options.assetUuid = assetUuid;
-                if (args.unlinkPrefab) options.unlinkPrefab = true;
+                request.assetUuid = assetUuid;
+                if (args.unlinkPrefab) request.unlinkPrefab = true;
             }
-            if (Array.isArray(args.components) && args.components.length) options.components = args.components;
-            else if (args.nodeType && args.nodeType !== 'Node' && !assetUuid) options.components = [args.nodeType];
-            if (args.keepWorldTransform) options.keepWorldTransform = true;
+            if (Array.isArray(args.components) && args.components.length) request.components = args.components;
+            else if (args.nodeType && args.nodeType !== 'Node' && !assetUuid) request.components = [args.nodeType];
+            if (args.keepWorldTransform) request.keepWorldTransform = true;
 
-            const response = await this.request('scene', 'create-node', options);
+            const response = await this.adapter.createNode(request);
             const uuid = this.uuidOf(response);
             if (!uuid) return { success: false, error: 'Cocos did not return a node UUID' };
             return { success: true, data: { uuid, name, parentUuid: args.parentUuid || null, assetUuid: assetUuid || null } };
@@ -85,7 +84,7 @@ export class NodeTools implements ToolExecutor {
     private async getNodeInfo(uuid: string): Promise<ToolResponse> {
         if (!uuid) return { success: false, error: 'Missing uuid' };
         try {
-            const raw: any = await this.request('scene', 'query-node', uuid);
+            const raw = await this.adapter.queryNode(uuid);
             if (!raw) return { success: false, error: 'Node not found or invalid response' };
             const children = this.unwrap<any[]>(raw.children, []) || [];
             const components = (raw.__comps__ || []).map((component: any) => ({
@@ -114,7 +113,7 @@ export class NodeTools implements ToolExecutor {
     private async findNodes(pattern: string, exactMatch = false): Promise<ToolResponse> {
         if (!pattern) return { success: false, error: 'Missing pattern' };
         try {
-            const tree: any = await this.request('scene', 'query-node-tree');
+            const tree = await this.adapter.queryNodeTree();
             const nodes: any[] = [];
             const visit = (node: any, parentPath: string) => {
                 if (!node) return;
@@ -142,7 +141,7 @@ export class NodeTools implements ToolExecutor {
 
     private async getAllNodes(): Promise<ToolResponse> {
         try {
-            const tree: any = await this.request('scene', 'query-node-tree');
+            const tree = await this.adapter.queryNodeTree();
             const nodes: any[] = [];
             const visit = (node: any, parentPath: string) => {
                 if (!node) return;
@@ -161,7 +160,7 @@ export class NodeTools implements ToolExecutor {
     private async setNodeProperty(uuid: string, property: string, value: any): Promise<ToolResponse> {
         if (!uuid || !property) return { success: false, error: 'Missing uuid or property' };
         try {
-            await this.request('scene', 'set-property', { uuid, path: property, dump: { value } });
+            await this.adapter.setNodeProperty({ uuid, path: property, value });
             return { success: true, data: { nodeUuid: uuid, property, newValue: value } };
         } catch (error: any) {
             return { success: false, error: error?.message || String(error) };
@@ -174,7 +173,7 @@ export class NodeTools implements ToolExecutor {
             const updates: string[] = [];
             for (const property of ['position', 'rotation', 'scale']) {
                 if (args[property] === undefined) continue;
-                await this.request('scene', 'set-property', { uuid: args.uuid, path: property, dump: { value: args[property] } });
+                await this.adapter.setNodeProperty({ uuid: args.uuid, path: property, value: args[property] });
                 updates.push(property);
             }
             if (!updates.length) return { success: false, error: 'No transform properties specified' };
@@ -187,7 +186,7 @@ export class NodeTools implements ToolExecutor {
     private async deleteNode(uuid: string): Promise<ToolResponse> {
         if (!uuid) return { success: false, error: 'Missing uuid' };
         try {
-            await this.request('scene', 'remove-node', { uuid });
+            await this.adapter.removeNode(uuid);
             return { success: true, message: 'Node deleted successfully' };
         } catch (error: any) {
             return { success: false, error: error?.message || String(error) };
@@ -197,7 +196,7 @@ export class NodeTools implements ToolExecutor {
     private async moveNode(nodeUuid: string, newParentUuid: string, siblingIndex = -1): Promise<ToolResponse> {
         if (!nodeUuid || !newParentUuid) return { success: false, error: 'Missing nodeUuid or newParentUuid' };
         try {
-            await this.request('scene', 'set-parent', {
+            await this.adapter.setNodeParent({
                 parent: newParentUuid,
                 uuids: [nodeUuid],
                 keepWorldTransform: false,
@@ -212,7 +211,7 @@ export class NodeTools implements ToolExecutor {
     private async duplicateNode(uuid: string, includeChildren = true): Promise<ToolResponse> {
         if (!uuid) return { success: false, error: 'Missing uuid' };
         try {
-            const response: any = await this.request('scene', 'duplicate-node', uuid);
+            const response = await this.adapter.duplicateNode(uuid);
             const newUuid = this.uuidOf(response);
             if (!newUuid) return { success: false, error: 'Cocos did not return the duplicated node UUID' };
             return { success: true, data: { newUuid, includeChildren, message: 'Node duplicated successfully' } };
