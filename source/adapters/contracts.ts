@@ -1,5 +1,7 @@
+import { ComponentAdapter } from './contracts/component-adapter';
 import { NodeAdapter } from './contracts/node-adapter';
 import { SceneAdapter } from './contracts/scene-adapter';
+import { UIAdapter } from './contracts/ui-adapter';
 
 export type CocosSupportLevel = 'stable' | 'preview' | 'unsupported';
 export type CocosCapabilityMap = Record<string, boolean>;
@@ -27,6 +29,8 @@ export interface CocosAdapter {
     readonly profile: CocosCompatibilityProfile;
     readonly node: NodeAdapter;
     readonly scene: SceneAdapter;
+    readonly component: ComponentAdapter;
+    readonly ui: UIAdapter;
 
     request(channel: string, message: string, ...args: any[]): Promise<any>;
     send(channel: string, message: string, ...args: any[]): void;
