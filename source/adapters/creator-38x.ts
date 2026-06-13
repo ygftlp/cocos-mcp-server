@@ -7,6 +7,7 @@ import { Creator38xComponentAdapter } from './creator-38x/component-adapter';
 import { Creator38xNodeAdapter } from './creator-38x/node-adapter';
 import { Creator38xPrefabAdapter } from './creator-38x/prefab-adapter';
 import { Creator38xProjectAdapter } from './creator-38x/project-adapter';
+import { Creator38xSceneAdvancedAdapter } from './creator-38x/scene-advanced-adapter';
 import { Creator38xSceneAdapter } from './creator-38x/scene-adapter';
 import { Creator38xUIAdapter } from './creator-38x/ui-adapter';
 
@@ -28,6 +29,7 @@ export class Creator38xAdapter extends BaseCocosAdapter {
         }, {
             node: new Creator38xNodeAdapter(),
             scene: new Creator38xSceneAdapter(),
+            sceneAdvanced: new Creator38xSceneAdvancedAdapter(),
             component: new Creator38xComponentAdapter(),
             ui: new Creator38xUIAdapter(),
             asset: new Creator38xAssetAdapter(),
