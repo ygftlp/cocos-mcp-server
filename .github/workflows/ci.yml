@@ -22,6 +22,12 @@ jobs:
       - run: npm ci --ignore-scripts
       - name: Select Cocos Creator type definitions
         run: npm install --no-save --ignore-scripts @cocos/creator-types@${{ matrix.creator-types }}
+      - name: Capture relevant Creator type declarations
+        shell: bash
+        run: |
+          grep -R -n -B 4 -A 16 "interface AssetInfo" node_modules/@cocos/creator-types > creator-types-snippet.txt || true
+          head -n 240 creator-types-snippet.txt > creator-types-snippet.trimmed.txt
+          mv creator-types-snippet.trimmed.txt creator-types-snippet.txt
       - name: Run source checks
         shell: bash
         run: |
@@ -32,6 +38,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-output-node-${{ matrix.node }}-creator-${{ matrix.creator-types }}
-          path: test-output.txt
+          path: |
+            test-output.txt
+            creator-types-snippet.txt
           if-no-files-found: ignore
           retention-days: 3
