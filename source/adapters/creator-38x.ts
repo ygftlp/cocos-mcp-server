@@ -1,6 +1,8 @@
 import { BaseCocosAdapter } from './base-adapter';
 import { createStable38xCapabilities } from './capabilities';
 import { ParsedCocosVersion } from './contracts';
+import { Creator38xNodeAdapter } from './creator-38x/node-adapter';
+import { Creator38xSceneAdapter } from './creator-38x/scene-adapter';
 
 export class Creator38xAdapter extends BaseCocosAdapter {
     static supports(version: ParsedCocosVersion): boolean {
@@ -17,6 +19,9 @@ export class Creator38xAdapter extends BaseCocosAdapter {
             writeEnabled: true,
             capabilities: createStable38xCapabilities(),
             warnings: []
+        }, {
+            node: new Creator38xNodeAdapter(),
+            scene: new Creator38xSceneAdapter()
         });
     }
 }
