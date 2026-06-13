@@ -4,6 +4,7 @@ import { ComponentAdapter } from './contracts/component-adapter';
 import { NodeAdapter } from './contracts/node-adapter';
 import { PrefabAdapter } from './contracts/prefab-adapter';
 import { ProjectAdapter } from './contracts/project-adapter';
+import { RuntimeAdapter } from './contracts/runtime-adapter';
 import { SceneAdvancedAdapter } from './contracts/scene-advanced-adapter';
 import { SceneAdapter } from './contracts/scene-adapter';
 import { UIAdapter } from './contracts/ui-adapter';
@@ -41,6 +42,7 @@ export interface CocosAdapter {
     readonly prefab: PrefabAdapter;
     readonly build: BuildAdapter;
     readonly project: ProjectAdapter;
+    readonly runtime: RuntimeAdapter;
 
     request(channel: string, message: string, ...args: any[]): Promise<any>;
     send(channel: string, message: string, ...args: any[]): void;

@@ -4,6 +4,7 @@ import { ComponentAdapter } from './contracts/component-adapter';
 import { NodeAdapter } from './contracts/node-adapter';
 import { PrefabAdapter } from './contracts/prefab-adapter';
 import { ProjectAdapter } from './contracts/project-adapter';
+import { RuntimeAdapter } from './contracts/runtime-adapter';
 import { SceneAdvancedAdapter } from './contracts/scene-advanced-adapter';
 import { SceneAdapter } from './contracts/scene-adapter';
 import { UIAdapter } from './contracts/ui-adapter';
@@ -15,6 +16,7 @@ import {
     UnavailableNodeAdapter,
     UnavailablePrefabAdapter,
     UnavailableProjectAdapter,
+    UnavailableRuntimeAdapter,
     UnavailableSceneAdvancedAdapter,
     UnavailableSceneAdapter,
     UnavailableUIAdapter
@@ -30,6 +32,7 @@ export abstract class BaseCocosAdapter implements CocosAdapter {
     public readonly prefab: PrefabAdapter;
     public readonly build: BuildAdapter;
     public readonly project: ProjectAdapter;
+    public readonly runtime: RuntimeAdapter;
 
     constructor(
         public readonly profile: CocosCompatibilityProfile,
@@ -43,6 +46,7 @@ export abstract class BaseCocosAdapter implements CocosAdapter {
             prefab?: PrefabAdapter;
             build?: BuildAdapter;
             project?: ProjectAdapter;
+            runtime?: RuntimeAdapter;
         } = {}
     ) {
         this.node = domains.node || new UnavailableNodeAdapter();
@@ -54,6 +58,7 @@ export abstract class BaseCocosAdapter implements CocosAdapter {
         this.prefab = domains.prefab || new UnavailablePrefabAdapter();
         this.build = domains.build || new UnavailableBuildAdapter();
         this.project = domains.project || new UnavailableProjectAdapter();
+        this.runtime = domains.runtime || new UnavailableRuntimeAdapter();
     }
 
     request(channel: string, message: string, ...args: any[]): Promise<any> {

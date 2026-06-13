@@ -1,7 +1,7 @@
 import { CocosCapabilityMap } from './contracts';
 
 export const TOOL_CATEGORIES = [
-    'scene', 'node', 'component', 'ui', 'prefab', 'asset', 'project',
+    'scene', 'node', 'component', 'ui', 'prefab', 'asset', 'project', 'runtime',
     'debug', 'preferences', 'server', 'referenceImage', 'sceneView', 'validation'
 ] as const;
 
