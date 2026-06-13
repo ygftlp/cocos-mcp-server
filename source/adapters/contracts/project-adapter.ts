@@ -3,7 +3,7 @@ export interface ProjectDescriptor {
     path: string;
     uuid: string;
     version: string;
-    creatorVersion: string;
+    cocosVersion: string;
 }
 
 export interface ProjectAdapter {
