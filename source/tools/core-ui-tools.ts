@@ -1,6 +1,6 @@
 import { ToolDefinition, ToolExecutor, ToolResponse } from '../types';
 import { UITools } from './ui-tools';
-import { buildActionSchema, executeAction, ToolActionMap } from './core-action-utils';
+import { ActionGroup, buildActionSchema, executeAction } from './core-action-utils';
 
 const referenceSchema = {
     oneOf: [
@@ -29,13 +29,13 @@ const referenceSchema = {
 export class UICoreTools implements ToolExecutor {
     private readonly ui = new UITools();
 
-    private readonly queryActions: ToolActionMap = {
+    private readonly queryActions: ActionGroup = {
         scene: { executor: this.ui, method: 'query_scene' },
         inspect: { executor: this.ui, method: 'inspect' },
         component_schema: { executor: this.ui, method: 'component_schema' }
     };
 
-    private readonly elementActions: ToolActionMap = {
+    private readonly elementActions: ActionGroup = {
         create: { executor: this.ui, method: 'create' },
         add_component: { executor: this.ui, method: 'add_component' },
         set_properties: { executor: this.ui, method: 'set_properties' },
@@ -44,7 +44,7 @@ export class UICoreTools implements ToolExecutor {
         delete: { executor: this.ui, method: 'delete' }
     };
 
-    private readonly eventActions: ToolActionMap = {
+    private readonly eventActions: ActionGroup = {
         configure: { executor: this.ui, method: 'configure_event' },
         list: { executor: this.ui, method: 'list_events' }
     };
