@@ -63,7 +63,7 @@ export class RuntimeTools implements ToolExecutor {
             fullPage: Boolean(args.fullPage)
         });
         const bytes = Buffer.byteLength(result.base64, 'base64');
-        return {
+        const response: any = {
             success: true,
             data: {
                 mimeType: result.mimeType,
@@ -72,6 +72,20 @@ export class RuntimeTools implements ToolExecutor {
                 ...(args.returnBase64 ? { base64: result.base64 } : {})
             }
         };
+        if (args.returnImage !== false) {
+            response._mcpContent = [
+                {
+                    type: 'text',
+                    text: JSON.stringify({ success: true, mimeType: result.mimeType, filePath: result.filePath, bytes })
+                },
+                {
+                    type: 'image',
+                    data: result.base64,
+                    mimeType: result.mimeType
+                }
+            ];
+        }
+        return response as ToolResponse;
     }
 
     private async logs(args: any): Promise<ToolResponse> {
