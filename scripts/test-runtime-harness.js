@@ -61,6 +61,15 @@ function parseClientFrame(buffer) {
     return { opcode, payload, consumed: offset + length };
 }
 
+async function waitUntil(predicate, timeoutMs = 1000) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() <= deadline) {
+        if (predicate()) return;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error(`Condition was not met within ${timeoutMs}ms`);
+}
+
 async function createMockCdpServer() {
     const server = net.createServer();
     const commands = [];
@@ -134,7 +143,7 @@ async function testCdpTransport() {
         assert.strictEqual(result.acknowledged, 'Runtime.enable');
         assert.strictEqual(mock.commands[0].method, 'Runtime.enable');
         mock.sendFragmentedEvent({ method: 'Runtime.consoleAPICalled', params: { type: 'log' } });
-        await new Promise((resolve) => setTimeout(resolve, 20));
+        await waitUntil(() => events.length > 0, 1000);
         assert.strictEqual(events[0].method, 'Runtime.consoleAPICalled');
     } finally {
         client.close();
