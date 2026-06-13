@@ -2,6 +2,7 @@ import { AssetAdapter } from './contracts/asset-adapter';
 import { BuildAdapter } from './contracts/build-adapter';
 import { ComponentAdapter } from './contracts/component-adapter';
 import { NodeAdapter } from './contracts/node-adapter';
+import { PrefabAdapter } from './contracts/prefab-adapter';
 import { ProjectAdapter } from './contracts/project-adapter';
 import { SceneAdapter } from './contracts/scene-adapter';
 import { UIAdapter } from './contracts/ui-adapter';
@@ -11,6 +12,7 @@ import {
     UnavailableBuildAdapter,
     UnavailableComponentAdapter,
     UnavailableNodeAdapter,
+    UnavailablePrefabAdapter,
     UnavailableProjectAdapter,
     UnavailableSceneAdapter,
     UnavailableUIAdapter
@@ -22,6 +24,7 @@ export abstract class BaseCocosAdapter implements CocosAdapter {
     public readonly component: ComponentAdapter;
     public readonly ui: UIAdapter;
     public readonly asset: AssetAdapter;
+    public readonly prefab: PrefabAdapter;
     public readonly build: BuildAdapter;
     public readonly project: ProjectAdapter;
 
@@ -33,6 +36,7 @@ export abstract class BaseCocosAdapter implements CocosAdapter {
             component?: ComponentAdapter;
             ui?: UIAdapter;
             asset?: AssetAdapter;
+            prefab?: PrefabAdapter;
             build?: BuildAdapter;
             project?: ProjectAdapter;
         } = {}
@@ -42,6 +46,7 @@ export abstract class BaseCocosAdapter implements CocosAdapter {
         this.component = domains.component || new UnavailableComponentAdapter();
         this.ui = domains.ui || new UnavailableUIAdapter();
         this.asset = domains.asset || new UnavailableAssetAdapter();
+        this.prefab = domains.prefab || new UnavailablePrefabAdapter();
         this.build = domains.build || new UnavailableBuildAdapter();
         this.project = domains.project || new UnavailableProjectAdapter();
     }
