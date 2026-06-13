@@ -1,4 +1,6 @@
+import { SceneAdvancedAdapter } from '../adapters/contracts/scene-advanced-adapter';
 import { SceneAdapter } from '../adapters/contracts/scene-adapter';
+import { selectCocosAdapter } from '../adapters/selector';
 import { ToolDefinition, ToolExecutor, ToolResponse } from '../types';
 import { SceneTools } from './scene-tools';
 import { SceneAdvancedTools } from './scene-advanced-tools';
@@ -6,11 +8,15 @@ import { buildActionSchema, executeAction, ToolActionMap } from './core-action-u
 
 export class SceneCoreTools implements ToolExecutor {
     private readonly scene: SceneTools;
-    private readonly advanced = new SceneAdvancedTools();
+    private readonly advanced: SceneAdvancedTools;
     private readonly actions: ToolActionMap;
 
-    constructor(sceneAdapter: SceneAdapter) {
+    constructor(
+        sceneAdapter: SceneAdapter = selectCocosAdapter().scene,
+        advancedAdapter: SceneAdvancedAdapter = selectCocosAdapter().sceneAdvanced
+    ) {
         this.scene = new SceneTools(sceneAdapter);
+        this.advanced = new SceneAdvancedTools(advancedAdapter);
         this.actions = {
             management: {
                 current: { executor: this.scene, method: 'get_current_scene' },
