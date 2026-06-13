@@ -43,9 +43,18 @@ export class MCPProtocolEngine {
 
     toCallResult(normalized: any, forceError = false): any {
         const isError = forceError || normalized?.ok === false || normalized?.success === false;
+        const structuredContent = normalized && typeof normalized === 'object' && !Array.isArray(normalized)
+            ? { ...normalized }
+            : normalized;
+        const explicitContent = Array.isArray(structuredContent?._mcpContent)
+            ? structuredContent._mcpContent.filter((entry: any) => entry && typeof entry.type === 'string')
+            : null;
+        if (structuredContent && typeof structuredContent === 'object') delete structuredContent._mcpContent;
         return {
-            content: [{ type: 'text', text: JSON.stringify(normalized) }],
-            structuredContent: normalized,
+            content: explicitContent?.length
+                ? explicitContent
+                : [{ type: 'text', text: JSON.stringify(structuredContent) }],
+            structuredContent,
             isError
         };
     }
@@ -143,7 +152,7 @@ export class MCPProtocolEngine {
             },
             instructions: compatibility
                 ? `Read cocos://compatibility or call compatibility_info before planning editor changes. Active adapter: ${compatibility.adapterId}; support level: ${compatibility.supportLevel}.`
-                : 'Use project_quick_start to scaffold a Cocos project, scene/node/component tools to assemble gameplay, and project_build to build it.'
+                : 'Use project_quick_start to scaffold a Cocos project, scene/node/component tools to assemble gameplay, and project_playtest to build and validate it inside the Creator extension.'
         };
     }
 
