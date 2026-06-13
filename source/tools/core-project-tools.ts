@@ -113,7 +113,7 @@ export class ProjectCoreTools implements ToolExecutor {
             {
                 name: 'build',
                 title: 'Build Cocos project',
-                description: 'Build the current Cocos project through the editor Builder or the official Cocos Creator CLI.',
+                description: 'Build the current Cocos project through the Creator extension Builder or the official Cocos Creator CLI.',
                 inputSchema: {
                     type: 'object',
                     properties: {
@@ -136,6 +136,50 @@ export class ProjectCoreTools implements ToolExecutor {
                 }
             },
             {
+                name: 'playtest',
+                title: 'Build and playtest inside the Cocos Creator extension',
+                description: 'Run one plugin-native transaction that stops an existing session, builds through Creator Builder, launches the web build, waits for readiness, captures an MCP image, and checks runtime logs.',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        platform: { type: 'string', enum: ['web-desktop', 'web-mobile'], default: 'web-desktop' },
+                        mode: { type: 'string', enum: ['editor', 'auto', 'cli'], default: 'editor' },
+                        creatorPath: { type: 'string' },
+                        debug: { type: 'boolean' },
+                        outputName: { type: 'string' },
+                        buildPath: { type: 'string', description: 'Creator build output root' },
+                        runtimeBuildPath: { type: 'string', description: 'Optional explicit directory containing the generated index.html' },
+                        options: { type: 'object', additionalProperties: true },
+                        headless: { type: 'boolean', default: true },
+                        browserPath: { type: 'string' },
+                        width: { type: 'integer', minimum: 320, maximum: 7680, default: 1280 },
+                        height: { type: 'integer', minimum: 240, maximum: 4320, default: 720 },
+                        host: { type: 'string', enum: ['127.0.0.1', 'localhost', '::1'], default: '127.0.0.1' },
+                        port: { type: 'integer', minimum: 1, maximum: 65535 },
+                        startupTimeoutMs: { type: 'integer', minimum: 3000, maximum: 120000, default: 30000 },
+                        readyExpression: { type: 'string', description: 'JavaScript condition evaluated in the running game' },
+                        readyTimeoutMs: { type: 'integer', minimum: 100, maximum: 300000, default: 30000 },
+                        readyIntervalMs: { type: 'integer', minimum: 20, maximum: 5000, default: 100 },
+                        stopExisting: { type: 'boolean', default: true },
+                        rollbackOnFailure: { type: 'boolean', default: true },
+                        failOnRuntimeError: { type: 'boolean', default: true },
+                        captureScreenshot: { type: 'boolean', default: true },
+                        screenshotPath: { type: 'string' },
+                        screenshotFormat: { type: 'string', enum: ['png', 'jpeg', 'webp'], default: 'png' },
+                        screenshotQuality: { type: 'integer', minimum: 1, maximum: 100 },
+                        fullPage: { type: 'boolean', default: false },
+                        includeLogs: { type: 'boolean', default: true },
+                        fallbackOpenPanel: { type: 'boolean', default: true },
+                        extraBrowserArgs: { type: 'array', items: { type: 'string' }, maxItems: 50 }
+                    },
+                    additionalProperties: false
+                },
+                xCocos: {
+                    kind: 'write', destructive: false, sideEffect: true, cost: 'high', scope: ['project', 'runtime'],
+                    requires: ['project.build', 'runtime.write', 'runtime.read']
+                }
+            },
+            {
                 name: 'build_system',
                 description: 'Build system inspection and panel access',
                 inputSchema: buildActionSchema(this.actions.build_system, 'Build system parameters')
@@ -147,6 +191,7 @@ export class ProjectCoreTools implements ToolExecutor {
         if (toolName === 'quick_start') return this.project.execute('quick_start_project', args);
         if (toolName === 'create_game') return this.gameProject.execute('create_game', args);
         if (toolName === 'build') return this.project.execute('build_project', args);
+        if (toolName === 'playtest') return this.project.execute('build_and_run', args);
         return executeAction(toolName, args, this.actions);
     }
 
