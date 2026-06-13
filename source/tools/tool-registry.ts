@@ -8,6 +8,7 @@ import { ComponentCoreTools } from './core-component-tools';
 import { PrefabCoreTools } from './core-prefab-tools';
 import { AssetCoreTools } from './core-asset-tools';
 import { ProjectCoreTools } from './core-project-tools';
+import { RuntimeCoreTools } from './core-runtime-tools';
 import { DebugCoreTools } from './core-debug-tools';
 import { PreferencesCoreTools } from './core-preferences-tools';
 import { ServerCoreTools } from './core-server-tools';
@@ -41,6 +42,7 @@ export class ToolRegistry {
             prefab: new PrefabCoreTools(adapter),
             asset: new AssetCoreTools(adapter),
             project: new ProjectCoreTools(adapter),
+            runtime: new RuntimeCoreTools(adapter.runtime),
             debug: new DebugCoreTools(),
             preferences: new PreferencesCoreTools(),
             server: new ServerCoreTools(serverTools),
@@ -175,8 +177,8 @@ export class ToolRegistry {
         const full = `${category}_${name}`;
         const readVerbs = ['get', 'list', 'query', 'find', 'check', 'validate', 'analyze', 'detect'];
         const writeVerbs = ['set', 'update', 'create', 'delete', 'remove', 'add', 'attach', 'move', 'copy', 'import', 'reimport', 'save', 'apply', 'reset', 'start', 'stop', 'build', 'run', 'open'];
-        const readHints = ['info', 'status', 'hierarchy', 'browse', 'logs', 'log', 'view', 'catalog'];
-        const writeHints = ['manage', 'lifecycle', 'transform', 'operations', 'system', 'snapshot', 'undo', 'batch', 'clipboard', 'edit', 'manifest', 'property', 'control', 'element', 'event'];
+        const readHints = ['info', 'status', 'hierarchy', 'browse', 'logs', 'log', 'view', 'catalog', 'observe'];
+        const writeHints = ['manage', 'lifecycle', 'transform', 'operations', 'system', 'snapshot', 'undo', 'batch', 'clipboard', 'edit', 'manifest', 'property', 'control', 'element', 'event', 'session', 'input'];
         const destructiveVerbs = ['delete', 'remove', 'move', 'reimport', 'reset'];
 
         const isRead = readVerbs.some((verb) => name.startsWith(verb) || name.includes(`_${verb}`) || full.includes(verb))
@@ -186,12 +188,13 @@ export class ToolRegistry {
         const destructive = destructiveVerbs.some((verb) => name.startsWith(verb) || name.includes(`_${verb}`));
 
         let cost: ToolMeta['cost'] = 'medium';
-        if (name.includes('build') || name.includes('analyze') || name.includes('validate') || name.includes('optimize')) cost = 'high';
-        else if (name.includes('query') || name.includes('get') || name.includes('find') || name.includes('catalog')) cost = 'low';
+        if (name.includes('build') || name.includes('analyze') || name.includes('validate') || name.includes('optimize') || name.includes('session')) cost = 'high';
+        else if (name.includes('query') || name.includes('get') || name.includes('find') || name.includes('catalog') || name.includes('input')) cost = 'low';
 
         let scope: string[];
         if (['scene', 'node', 'component', 'ui', 'prefab', 'sceneView', 'referenceImage'].includes(category)) scope = ['scene'];
         else if (['project', 'asset', 'preferences'].includes(category)) scope = ['project', 'assets'];
+        else if (category === 'runtime') scope = ['runtime'];
         else if (['server', 'debug', 'compatibility'].includes(category)) scope = ['system'];
         else scope = ['general'];
 
