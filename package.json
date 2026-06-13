@@ -69,7 +69,7 @@
             "getEnabledTools": { "methods": ["getEnabledTools"] }
         },
         "scene": {
-            "script": "./dist/scene.js",
+            "script": "./dist/scene-entry.js",
             "methods": [
                 "createNewScene",
                 "addComponentToNode",
@@ -81,7 +81,9 @@
                 "setComponentProperty",
                 "getCurrentSceneInfo",
                 "getSceneHierarchy",
-                "createPrefabFromNode"
+                "createPrefabFromNode",
+                "configureUIEvent",
+                "getUIEventHandlers"
             ]
         }
     }
