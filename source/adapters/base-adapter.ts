@@ -4,6 +4,7 @@ import { ComponentAdapter } from './contracts/component-adapter';
 import { NodeAdapter } from './contracts/node-adapter';
 import { PrefabAdapter } from './contracts/prefab-adapter';
 import { ProjectAdapter } from './contracts/project-adapter';
+import { SceneAdvancedAdapter } from './contracts/scene-advanced-adapter';
 import { SceneAdapter } from './contracts/scene-adapter';
 import { UIAdapter } from './contracts/ui-adapter';
 import { CocosAdapter, CocosCompatibilityProfile } from './contracts';
@@ -14,6 +15,7 @@ import {
     UnavailableNodeAdapter,
     UnavailablePrefabAdapter,
     UnavailableProjectAdapter,
+    UnavailableSceneAdvancedAdapter,
     UnavailableSceneAdapter,
     UnavailableUIAdapter
 } from './unavailable-domains';
@@ -21,6 +23,7 @@ import {
 export abstract class BaseCocosAdapter implements CocosAdapter {
     public readonly node: NodeAdapter;
     public readonly scene: SceneAdapter;
+    public readonly sceneAdvanced: SceneAdvancedAdapter;
     public readonly component: ComponentAdapter;
     public readonly ui: UIAdapter;
     public readonly asset: AssetAdapter;
@@ -33,6 +36,7 @@ export abstract class BaseCocosAdapter implements CocosAdapter {
         domains: {
             node?: NodeAdapter;
             scene?: SceneAdapter;
+            sceneAdvanced?: SceneAdvancedAdapter;
             component?: ComponentAdapter;
             ui?: UIAdapter;
             asset?: AssetAdapter;
@@ -43,6 +47,7 @@ export abstract class BaseCocosAdapter implements CocosAdapter {
     ) {
         this.node = domains.node || new UnavailableNodeAdapter();
         this.scene = domains.scene || new UnavailableSceneAdapter();
+        this.sceneAdvanced = domains.sceneAdvanced || new UnavailableSceneAdvancedAdapter();
         this.component = domains.component || new UnavailableComponentAdapter();
         this.ui = domains.ui || new UnavailableUIAdapter();
         this.asset = domains.asset || new UnavailableAssetAdapter();
