@@ -1,218 +1,188 @@
-# Cocos MCP Web Runtime Workflow
+# Cocos MCP Plugin-Native Playtest Workflow
 
-The runtime tools let a model build, launch, observe, interact with, and stop a Cocos Creator web build without relying on private Cocos Creator preview-button APIs.
+`cocos-mcp-server` runs as a Cocos Creator extension. The extension now participates in three Creator processes:
+
+- `main`: MCP server, tool registry, build/run orchestration, and lifecycle cleanup
+- `scene`: scene, node, component, prefab, and UI operations through Creator's scene process
+- `builder`: Creator Build Extension hooks, including post-build runtime-bridge injection
+
+The browser process used for a web playtest is a child runtime launched and owned by the Creator extension. It is not a replacement for the extension host.
 
 ## Supported scope
 
 - Cocos Creator: `>=3.8.6 <3.9.0`
-- Build targets: browser-compatible Cocos builds such as `web-desktop` and `web-mobile`
+- Plugin-native build orchestration through Creator Builder
+- Automated playtest targets: `web-desktop` and `web-mobile`
 - Browser engines: Google Chrome, Microsoft Edge, or Chromium
-- Host binding: loopback only (`127.0.0.1`, `localhost`, or `::1` inputs are normalized to a local-only session)
+- Host binding: loopback only
 - Protocol: Chrome DevTools Protocol through an isolated temporary browser profile
 
-The runtime harness does not control Cocos Creator's private Preview UI, native simulator, or physical mobile devices.
+Native platforms can still be built through `project_build`. Automated installation and input control on simulators or physical devices belong to separate platform adapters because Android, iOS, Windows, macOS, and mini-game platforms have different deployment and debugging protocols.
 
-## MCP tools
+## One-call Creator playtest
 
-### `runtime_session`
+Use `project_playtest` for the normal model workflow. It performs one transaction inside the enabled Creator extension:
 
-Actions:
-
-- `start`: serve a completed web build and start Chromium
-- `status`: inspect the current session
-- `reload`: reload the game page
-- `stop`: close CDP, terminate Chromium, close the server, and remove the temporary browser profile
+1. Stop the previous playtest session.
+2. Check the Creator Builder worker.
+3. Build the current project through Creator Builder.
+4. Let the extension's `onAfterBuild` hook inject the runtime test bridge.
+5. Start the generated web build.
+6. Wait for the game and canvas or a supplied readiness expression.
+7. Capture a screenshot as a standard MCP `image` content block.
+8. Read runtime logs and fail the transaction when error logs are present.
+9. Stop the runtime automatically when a later stage fails and rollback is enabled.
 
 Example:
 
 ```json
 {
-  "action": "start",
-  "params": {
-    "buildPath": "build/web-desktop",
-    "headless": true,
-    "width": 1280,
-    "height": 720,
-    "startupTimeoutMs": 30000
-  }
+  "platform": "web-desktop",
+  "mode": "editor",
+  "debug": true,
+  "headless": true,
+  "width": 1280,
+  "height": 720,
+  "readyTimeoutMs": 30000,
+  "captureScreenshot": true,
+  "failOnRuntimeError": true,
+  "rollbackOnFailure": true
 }
 ```
 
-`buildPath` may be absolute or relative to the Cocos project. When omitted, the adapter checks common Cocos build directories.
+The result contains:
 
-`browserPath` may be supplied explicitly. Otherwise the adapter searches common Chrome, Edge, and Chromium locations and executable names.
+- transaction ID
+- Creator build result
+- runtime session details
+- readiness result
+- screenshot metadata
+- MCP image content for vision-capable clients
+- runtime logs and error count
+- per-stage status, timestamps, duration, and failure details
 
-### `runtime_observe`
+## Automatic build bridge
 
-Actions:
-
-- `evaluate`: evaluate JavaScript in the game page
-- `wait_for`: poll a JavaScript expression until it becomes truthy
-- `screenshot`: capture the viewport or full page
-- `logs`: read console, exception, network, browser process, and JavaScript dialog events
-
-Evaluate example:
+The package declares:
 
 ```json
 {
-  "action": "evaluate",
-  "params": {
-    "expression": "document.querySelector('canvas') !== null",
-    "awaitPromise": true
+  "contributions": {
+    "builder": "./dist/builder"
   }
 }
 ```
 
-Wait example:
+The builder contribution registers an `onAfterBuild` hook for Creator builds. For web builds, the hook:
 
-```json
-{
-  "action": "wait_for",
-  "params": {
-    "expression": "document.readyState === 'complete' && document.querySelector('canvas')",
-    "timeoutMs": 15000,
-    "intervalMs": 100
-  }
-}
+- locates the generated `index.html`
+- writes `cocos-mcp-test-bridge.js`
+- injects the bridge before the game scripts load
+- writes `.cocos-mcp-runtime.json` build metadata
+- remains idempotent when the same output is rebuilt
+
+The injected global API is:
+
+```js
+globalThis.__COCOS_MCP_TEST__
 ```
 
-Screenshot example:
+It is available automatically. A game does not need to create the bridge itself.
 
-```json
-{
-  "action": "screenshot",
-  "params": {
-    "format": "png",
-    "filePath": "main-menu.png",
-    "fullPage": false,
-    "returnBase64": false
-  }
-}
+### Generic state
+
+```js
+__COCOS_MCP_TEST__.getState()
 ```
 
-Screenshot files are restricted to:
+returns generic runtime information including:
+
+- page readiness
+- URL and document title
+- page visibility
+- canvas dimensions
+- published game state
+- captured error count and last error
+- bridge event sequence
+
+### Semantic game state
+
+Game scripts may optionally publish domain state:
+
+```ts
+(globalThis as any).__COCOS_MCP_TEST__?.publish('game', {
+    scene: 'Main',
+    score: this.score,
+    playerAlive: this.playerAlive
+});
+```
+
+The bridge is automatic; publishing semantic values is optional and is only needed when a test must understand game-specific concepts such as score, inventory, quest state, or AI mode.
+
+A model can then use:
+
+```js
+__COCOS_MCP_TEST__.get('game')
+```
+
+or wait for:
+
+```js
+__COCOS_MCP_TEST__.get('game')?.score >= 10
+```
+
+## Direct runtime tools
+
+`runtime_session` remains available for multi-step debugging:
+
+- `start`
+- `status`
+- `reload`
+- `stop`
+
+`runtime_observe` supports:
+
+- `evaluate`
+- `wait_for`
+- `screenshot`
+- `logs`
+
+`runtime_input` supports:
+
+- mouse move, press, release, click, and wheel
+- keyboard down, up, character input, and press
+- touch start, move, end, and tap
+
+## MCP image output
+
+Runtime screenshots are returned in two forms:
+
+1. A file under:
 
 ```text
 <project>/.cocos-mcp/runtime-artifacts/
 ```
 
-Log example:
+2. A standard MCP content item:
 
 ```json
 {
-  "action": "logs",
-  "params": {
-    "sinceSequence": 0,
-    "levels": ["warning", "error"],
-    "limit": 500
-  }
+  "type": "image",
+  "data": "<base64>",
+  "mimeType": "image/png"
 }
 ```
 
-Use the returned `nextSequence` for incremental log reads.
+Vision-capable MCP clients can therefore inspect the screenshot directly. The model does not need to open a local file path manually.
 
-### `runtime_input`
+## Extension lifecycle
 
-Actions:
+The extension exposes Creator messages:
 
-- `mouse`: move, press, release, click, or wheel
-- `keyboard`: key down, key up, character input, or press
-- `touch`: touch start, move, end, or tap
+- `run-playtest`
+- `stop-playtest`
 
-Mouse example:
-
-```json
-{
-  "action": "mouse",
-  "params": {
-    "type": "click",
-    "x": 640,
-    "y": 360,
-    "button": "left"
-  }
-}
-```
-
-Keyboard example:
-
-```json
-{
-  "action": "keyboard",
-  "params": {
-    "type": "press",
-    "key": " ",
-    "code": "Space"
-  }
-}
-```
-
-Touch example:
-
-```json
-{
-  "action": "touch",
-  "params": {
-    "type": "tap",
-    "points": [
-      { "x": 320, "y": 480, "id": 0 }
-    ]
-  }
-}
-```
-
-## Recommended model loop
-
-1. Create or update the game using project, scene, node, component, UI, asset, and prefab tools.
-2. Build `web-desktop` with `project_build`.
-3. Start the build with `runtime_session.start`.
-4. Read initial logs and wait for the canvas or a project-specific readiness condition.
-5. Send player input with `runtime_input`.
-6. Inspect state with `runtime_observe.evaluate` or a project-provided test hook.
-7. Capture a screenshot and read incremental logs.
-8. Stop the runtime before rebuilding.
-9. Fix the game and repeat.
-
-## Project-specific test hooks
-
-A production project should expose a narrow, read-only test surface instead of asking the model to inspect minified engine internals. For example:
-
-```ts
-interface GameTestBridge {
-    ready: boolean;
-    scene: string;
-    score: number;
-    player: { x: number; y: number; alive: boolean };
-}
-
-(window as any).__COCOS_MCP_TEST__ = {
-    getState(): GameTestBridge {
-        return {
-            ready: true,
-            scene: 'Main',
-            score: gameState.score,
-            player: {
-                x: player.position.x,
-                y: player.position.y,
-                alive: player.alive
-            }
-        };
-    }
-};
-```
-
-The model can then evaluate:
-
-```js
-window.__COCOS_MCP_TEST__?.getState()
-```
-
-and wait for deterministic conditions such as:
-
-```js
-window.__COCOS_MCP_TEST__?.getState().score >= 10
-```
-
-Do not expose secrets, authentication tokens, payment data, or unrestricted file/network operations through the test bridge.
+When the extension unloads, it closes the CDP connection, terminates its browser child process, closes the local server, and removes the temporary browser profile.
 
 ## Security properties
 
@@ -222,13 +192,16 @@ Do not expose secrets, authentication tokens, payment data, or unrestricted file
 - `--remote-debugging-*` and `--user-data-dir` cannot be overridden through extra arguments.
 - Static-file paths are resolved inside the selected build root and traversal attempts are rejected.
 - Screenshot output is restricted to the project's runtime-artifact directory.
+- The bridge records runtime data but does not expose file access, credentials, payment data, or unrestricted network APIs.
 - The harness does not add a third-party browser-automation dependency.
 
-## Current limitations
+## Native platform boundary
 
-- A web build must already exist before `runtime_session.start`.
-- The harness does not currently trigger the Cocos build automatically.
-- Native, simulator, and physical-device execution are outside this adapter.
-- Visual understanding is supplied by the model consuming the screenshot; the runtime adapter only captures it.
-- Application-specific gameplay assertions should use a project test hook or stable DOM/canvas conditions.
-- Browser availability differs by machine; pass `browserPath` when automatic discovery is insufficient.
+The plugin can invoke Creator builds for supported native and mini-game platforms. Automated execution is intentionally separated by platform:
+
+- Android requires ADB/device or emulator integration.
+- iOS requires Xcode, Simulator, signing, and macOS host integration.
+- Windows and macOS native builds require executable process and native debugging adapters.
+- WeChat, Douyin, and other mini-game platforms require their own developer tools and automation interfaces.
+
+These are future runtime adapters, not evidence that the MCP server is external to Creator. The current `creator-38x` web runtime adapter is the first implementation of the versioned runtime domain.

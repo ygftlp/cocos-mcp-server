@@ -22,6 +22,12 @@ function createRegistry(): ToolRegistry {
     return new ToolRegistry(getAdapter());
 }
 
+function ensureRegistry(): ToolRegistry {
+    if (!toolRegistry) toolRegistry = createRegistry();
+    if (!toolManager) toolManager = new ToolManager(toolRegistry);
+    return toolRegistry;
+}
+
 function normalizeSettings(input: SettingsInput): MCPServerSettings {
     const current = mcpServer ? mcpServer.getSettings() : readSettings();
     const merged: Partial<MCPServerSettings> = { ...current, ...input };
@@ -71,12 +77,22 @@ export const methods: { [key: string]: (...args: any[]) => any } = {
         return toolRegistry ? toolRegistry.getCompatibilityReport() : getAdapter().profile;
     },
 
+    async runPlaytest(options: any = {}) {
+        const registry = ensureRegistry();
+        const executor = registry.getExecutors().project;
+        if (!executor) throw new Error('Project tool executor is unavailable');
+        return executor.execute('playtest', options || {});
+    },
+
+    async stopPlaytest() {
+        return getAdapter().runtime.stop();
+    },
+
     async updateSettings(settings: SettingsInput) {
         const normalized = normalizeSettings(settings);
         saveSettings(normalized);
 
-        if (!toolRegistry) toolRegistry = createRegistry();
-        if (!toolManager) toolManager = new ToolManager(toolRegistry);
+        ensureRegistry();
 
         if (!mcpServer) {
             mcpServer = new MCPServer(normalized, toolRegistry);
@@ -183,6 +199,9 @@ export function load() {
 }
 
 export function unload() {
+    if (cocosAdapter) {
+        void cocosAdapter.runtime.stop().catch((error) => console.error('Failed to stop playtest runtime:', error));
+    }
     if (mcpServer) {
         void mcpServer.stop();
         mcpServer = null;
