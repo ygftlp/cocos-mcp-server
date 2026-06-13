@@ -7,11 +7,12 @@ import { buildActionSchema, executeAction, ToolActionMap } from './core-action-u
 
 export class PrefabCoreTools implements ToolExecutor {
     private readonly prefab: PrefabTools;
-    private readonly advanced = new SceneAdvancedTools();
+    private readonly advanced: SceneAdvancedTools;
     private readonly actions: ToolActionMap;
 
     constructor(adapter: CocosAdapter = selectCocosAdapter()) {
         this.prefab = new PrefabTools(adapter);
+        this.advanced = new SceneAdvancedTools(adapter.sceneAdvanced);
         this.actions = {
             browse: {
                 list: { executor: this.prefab, method: 'get_prefab_list' },
