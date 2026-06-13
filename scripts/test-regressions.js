@@ -12,9 +12,11 @@ global.Editor = global.Editor || {
         send: () => undefined
     },
     Panel: { open: () => undefined },
-    versions: { cocos: '3.8-test' }
+    versions: { cocos: '3.8.6' }
 };
 
+const { selectCocosAdapter } = require('../dist/adapters/selector');
+const { MCPProtocolEngine } = require('../dist/mcp-protocol');
 const { ToolRegistry } = require('../dist/tools/tool-registry');
 const { ServerTools } = require('../dist/tools/server-tools');
 const { GameProjectTools } = require('../dist/tools/game-project-tools');
@@ -28,12 +30,19 @@ const {
 } = require('../dist/tools/ui-component-catalog');
 
 async function main() {
-    const registry = new ToolRegistry();
+    const stableAdapter = selectCocosAdapter('3.8.6');
+    assert.strictEqual(stableAdapter.profile.adapterId, 'creator-38x');
+    assert.strictEqual(stableAdapter.profile.supportLevel, 'stable');
+    assert.strictEqual(stableAdapter.profile.writeEnabled, true);
+
+    const registry = new ToolRegistry(stableAdapter);
     const runtime = registry.buildRuntime(undefined);
     assert.ok(runtime.toolsList.length > 0, 'undefined filter should expose registry defaults');
     assert.strictEqual(registry.buildRuntime([]).toolsList.length, 0, 'empty filter must disable every tool');
 
     const toolNames = registry.listToolConfigs().map((tool) => `${tool.category}_${tool.name}`);
+    assert.ok(toolNames.includes('compatibility_info'));
+    assert.ok(toolNames.includes('compatibility_check'));
     assert.ok(toolNames.includes('project_create_game'), 'complete game composition tool must be public');
     for (const name of ['ui_catalog', 'ui_query', 'ui_element', 'ui_event', 'ui_validate']) {
         assert.ok(toolNames.includes(name), `${name} must be public`);
@@ -45,6 +54,40 @@ async function main() {
     assert.ok(!toolNames.includes('debug_console'), 'placeholder console capture tool must not be public');
     assert.ok(!toolNames.includes('asset_dependency'), 'unsupported dependency tool must not be public');
     assert.ok(!toolNames.includes('asset_compress'), 'unsupported compression tool must not be public');
+
+    const previewRegistry = new ToolRegistry(selectCocosAdapter('3.9.0'));
+    const previewNames = previewRegistry.buildRuntime(undefined).toolsList.map((tool) => tool.name).sort();
+    assert.deepStrictEqual(previewNames, ['compatibility_check', 'compatibility_info']);
+    const previewReport = previewRegistry.getCompatibilityReport();
+    assert.strictEqual(previewReport.adapterId, 'creator-39x');
+    assert.strictEqual(previewReport.supportLevel, 'preview');
+    assert.strictEqual(previewReport.writeEnabled, false);
+    assert.ok(previewReport.disabledToolCount > 0);
+    assert.ok(previewReport.disabledTools.some((tool) => tool.name === 'project_build'));
+
+    const unsupportedRegistry = new ToolRegistry(selectCocosAdapter('4.0.0'));
+    const unsupportedNames = unsupportedRegistry.buildRuntime(undefined).toolsList.map((tool) => tool.name).sort();
+    assert.deepStrictEqual(unsupportedNames, ['compatibility_check', 'compatibility_info']);
+    assert.strictEqual(unsupportedRegistry.getCompatibilityReport().supportLevel, 'unsupported');
+
+    const old38 = selectCocosAdapter('3.8.5');
+    assert.strictEqual(old38.profile.supportLevel, 'unsupported');
+    assert.ok(old38.profile.warnings.some((warning) => warning.includes('3.8.6')));
+
+    const protocol = new MCPProtocolEngine(
+        () => runtime.toolsList,
+        async () => ({ success: true }),
+        'test',
+        () => registry.getCompatibilityReport()
+    );
+    const initialized = await protocol.handlePayload({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } });
+    assert.ok(initialized.result.capabilities.resources);
+    assert.ok(initialized.result.instructions.includes('creator-38x'));
+    const resources = await protocol.handlePayload({ jsonrpc: '2.0', id: 2, method: 'resources/list' });
+    assert.strictEqual(resources.result.resources[0].uri, 'cocos://compatibility');
+    const compatibilityResource = await protocol.handlePayload({ jsonrpc: '2.0', id: 3, method: 'resources/read', params: { uri: 'cocos://compatibility' } });
+    const resourceData = JSON.parse(compatibilityResource.result.contents[0].text);
+    assert.strictEqual(resourceData.adapterId, 'creator-38x');
 
     const officialUIClasses = [
         'cc.Canvas', 'cc.UITransform', 'cc.Widget', 'cc.Button', 'cc.Layout', 'cc.EditBox',
@@ -68,6 +111,7 @@ async function main() {
     assert.strictEqual(packageJson.contributions.scene.script, './dist/scene-entry.js');
     assert.ok(packageJson.contributions.scene.methods.includes('configureUIEvent'));
     assert.ok(packageJson.contributions.scene.methods.includes('getUIEventHandlers'));
+    assert.ok(packageJson.contributions.messages['get-compatibility']);
 
     const available = [
         { category: 'node', name: 'query', enabled: true, description: 'query' },
@@ -123,9 +167,7 @@ async function main() {
 
     const gameTools = new GameProjectTools();
     const playablePlan = await gameTools.execute('create_game', {
-        template: 'arcade-clicker-2d',
-        projectName: 'Regression Game',
-        dryRun: true
+        template: 'arcade-clicker-2d', projectName: 'Regression Game', dryRun: true
     });
     assert.strictEqual(playablePlan.success, true);
     assert.strictEqual(playablePlan.data.template, 'arcade-clicker-2d');
@@ -134,8 +176,7 @@ async function main() {
     assert.strictEqual(playablePlan.data.sceneUrl, 'db://assets/game/scenes/Main.scene');
 
     const customPlan = await gameTools.execute('create_game', {
-        template: 'custom',
-        dryRun: true,
+        template: 'custom', dryRun: true,
         blueprint: {
             files: [{ path: 'scripts/Entry.ts', content: 'export const ready = true;\n' }],
             nodes: [{ id: 'root', name: 'Root' }]
@@ -145,8 +186,7 @@ async function main() {
     assert.strictEqual(customPlan.data.template, 'custom');
 
     const traversal = await gameTools.execute('create_game', {
-        template: 'custom',
-        dryRun: true,
+        template: 'custom', dryRun: true,
         blueprint: {
             files: [{ path: '../escape.ts', content: 'x' }],
             nodes: [{ id: 'root', name: 'Root' }]
