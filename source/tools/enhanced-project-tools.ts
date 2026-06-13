@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { spawn } from 'child_process';
@@ -5,6 +6,16 @@ import { CocosAdapter } from '../adapters/contracts';
 import { selectCocosAdapter } from '../adapters/selector';
 import { ToolExecutor, ToolResponse } from '../types';
 import { ProjectTools } from './project-tools';
+
+interface PlaytestStage {
+    name: string;
+    status: 'completed' | 'failed' | 'skipped';
+    startedAt: string;
+    finishedAt: string;
+    durationMs: number;
+    details?: any;
+    error?: string;
+}
 
 export class EnhancedProjectTools implements ToolExecutor {
     private readonly base: ProjectTools;
@@ -19,6 +30,7 @@ export class EnhancedProjectTools implements ToolExecutor {
         switch (toolName) {
             case 'quick_start_project': return this.quickStartProject(args || {});
             case 'build_project': return this.executeBuildProject(args || {});
+            case 'build_and_run': return this.buildAndRun(args || {});
             default: return this.base.execute(toolName, args);
         }
     }
@@ -82,7 +94,7 @@ export class EnhancedProjectTools implements ToolExecutor {
                     'Create or open a scene.',
                     'Add a root node and attach the generated SceneEntry component.',
                     'Use scene/node/component MCP tools to create gameplay objects.',
-                    'Call project_build when ready to produce a platform build.'
+                    'Call project_playtest to build, launch, inspect, and capture the game from the Creator extension.'
                 ]
             },
             message: dryRun
@@ -111,7 +123,7 @@ export class EnhancedProjectTools implements ToolExecutor {
                 return {
                     success: true,
                     data: { mode: 'editor', options: buildOptions, result },
-                    message: `Build started for ${buildOptions.platform}`
+                    message: `Build completed for ${buildOptions.platform}`
                 };
             } catch (error: any) {
                 errors.push(`Editor build failed: ${error?.message || String(error)}`);
@@ -134,6 +146,167 @@ export class EnhancedProjectTools implements ToolExecutor {
             errors.push('creatorPath is required for CLI build mode');
         }
         return this.buildFailure(args, buildOptions, errors);
+    }
+
+    private async buildAndRun(args: any): Promise<ToolResponse> {
+        const transactionId = randomUUID();
+        const stages: PlaytestStage[] = [];
+        const platform = String(args.platform || 'web-desktop');
+        const rollbackOnFailure = args.rollbackOnFailure !== false;
+        let buildResult: ToolResponse | null = null;
+        let runtimeSession: any = null;
+        let screenshot: any = null;
+        let logResult: any = null;
+
+        if (!platform.startsWith('web-')) {
+            return {
+                success: false,
+                error: `Plugin playtest currently requires a web build platform; received '${platform}'`,
+                data: { transactionId, platform, stages }
+            };
+        }
+
+        const runStage = async <T>(name: string, operation: () => Promise<T>, details?: any): Promise<T> => {
+            const started = Date.now();
+            const startedAt = new Date(started).toISOString();
+            try {
+                const value = await operation();
+                const finished = Date.now();
+                stages.push({
+                    name,
+                    status: 'completed',
+                    startedAt,
+                    finishedAt: new Date(finished).toISOString(),
+                    durationMs: finished - started,
+                    ...(details !== undefined ? { details } : {})
+                });
+                return value;
+            } catch (error: any) {
+                const finished = Date.now();
+                stages.push({
+                    name,
+                    status: 'failed',
+                    startedAt,
+                    finishedAt: new Date(finished).toISOString(),
+                    durationMs: finished - started,
+                    ...(details !== undefined ? { details } : {}),
+                    error: error?.message || String(error)
+                });
+                throw error;
+            }
+        };
+
+        try {
+            if (args.stopExisting !== false) {
+                await runStage('stop-existing-runtime', () => this.adapter.runtime.stop());
+            } else {
+                const now = new Date().toISOString();
+                stages.push({ name: 'stop-existing-runtime', status: 'skipped', startedAt: now, finishedAt: now, durationMs: 0 });
+            }
+
+            buildResult = await runStage('creator-build', async () => {
+                const response = await this.executeBuildProject({
+                    ...args,
+                    platform,
+                    mode: args.mode || 'editor',
+                    fallbackOpenPanel: args.fallbackOpenPanel !== false,
+                    dryRun: false
+                });
+                if (!response.success) throw new Error(response.error || 'Cocos Creator build failed');
+                return response;
+            }, { platform, mode: args.mode || 'editor' });
+
+            runtimeSession = await runStage('runtime-start', () => this.adapter.runtime.start({
+                buildPath: args.runtimeBuildPath || args.buildPath,
+                browserPath: args.browserPath,
+                headless: args.headless !== false,
+                width: args.width,
+                height: args.height,
+                host: args.host,
+                port: args.port,
+                startupTimeoutMs: args.startupTimeoutMs,
+                extraBrowserArgs: args.extraBrowserArgs
+            }));
+
+            const readyExpression = String(args.readyExpression || `Boolean(globalThis.__COCOS_MCP_TEST__?.getState?.().ready || (document.readyState === 'complete' && document.querySelector('canvas')))`);
+            const readyValue = await runStage('runtime-ready', () => this.adapter.runtime.waitFor(
+                readyExpression,
+                args.readyTimeoutMs || 30000,
+                args.readyIntervalMs || 100
+            ), { expression: readyExpression });
+
+            if (args.captureScreenshot !== false) {
+                screenshot = await runStage('runtime-screenshot', () => this.adapter.runtime.screenshot({
+                    format: args.screenshotFormat || 'png',
+                    quality: args.screenshotQuality,
+                    filePath: args.screenshotPath || `playtest-${transactionId}.png`,
+                    fullPage: Boolean(args.fullPage)
+                }));
+            } else {
+                const now = new Date().toISOString();
+                stages.push({ name: 'runtime-screenshot', status: 'skipped', startedAt: now, finishedAt: now, durationMs: 0 });
+            }
+
+            logResult = await runStage('runtime-logs', () => this.adapter.runtime.logs(0, false));
+            const errorLogs = (logResult.entries || []).filter((entry: any) => entry.level === 'error');
+            if (args.failOnRuntimeError !== false && errorLogs.length) {
+                throw new Error(`Runtime produced ${errorLogs.length} error log(s): ${errorLogs.slice(0, 3).map((entry: any) => entry.text).join(' | ')}`);
+            }
+
+            const data: any = {
+                transactionId,
+                platform,
+                build: buildResult.data,
+                runtime: runtimeSession,
+                readiness: { matched: true, value: readyValue },
+                screenshot: screenshot ? {
+                    mimeType: screenshot.mimeType,
+                    filePath: screenshot.filePath,
+                    bytes: Buffer.byteLength(screenshot.base64, 'base64')
+                } : null,
+                logs: {
+                    count: logResult.entries?.length || 0,
+                    errorCount: errorLogs.length,
+                    entries: args.includeLogs === false ? undefined : logResult.entries,
+                    nextSequence: logResult.nextSequence
+                },
+                stages
+            };
+
+            return {
+                success: true,
+                data,
+                message: 'Cocos Creator plugin playtest completed',
+                ...(screenshot ? {
+                    _mcpContent: [
+                        { type: 'text', text: JSON.stringify({ success: true, transactionId, runtime: runtimeSession, errorCount: errorLogs.length }) },
+                        { type: 'image', data: screenshot.base64, mimeType: screenshot.mimeType }
+                    ]
+                } : {})
+            } as ToolResponse;
+        } catch (error: any) {
+            if (rollbackOnFailure) {
+                try {
+                    await runStage('rollback-runtime-stop', () => this.adapter.runtime.stop());
+                } catch {
+                    // The failed rollback is already recorded in stages.
+                }
+            }
+            return {
+                success: false,
+                error: error?.message || String(error),
+                data: {
+                    transactionId,
+                    platform,
+                    build: buildResult?.data || null,
+                    runtime: runtimeSession,
+                    screenshot: screenshot ? { mimeType: screenshot.mimeType, filePath: screenshot.filePath } : null,
+                    logs: logResult,
+                    rollbackOnFailure,
+                    stages
+                }
+            };
+        }
     }
 
     private async buildFailure(args: any, buildOptions: Record<string, any>, errors: string[]): Promise<ToolResponse> {
