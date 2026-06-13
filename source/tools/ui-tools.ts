@@ -1,17 +1,18 @@
+import { CocosAdapter } from '../adapters/contracts';
+import { selectCocosAdapter } from '../adapters/selector';
 import { ToolDefinition, ToolExecutor, ToolResponse } from '../types';
 import { ComponentTools } from './component-tools';
 import { NodeTools } from './node-tools';
-import {
-    findUIComponent,
-    isCatalogUIComponent,
-    normalizeUIComponentClass,
-    UI_COMPONENT_CATALOG,
-    UIComponentDescriptor
-} from './ui-component-catalog';
+import { findUIComponent, normalizeUIComponentClass, UI_COMPONENT_CATALOG } from './ui-component-catalog';
 
 export class UITools implements ToolExecutor {
-    private readonly nodes = new NodeTools();
-    private readonly components = new ComponentTools();
+    private readonly nodes: NodeTools;
+    private readonly components: ComponentTools;
+
+    constructor(private readonly adapter: CocosAdapter = selectCocosAdapter()) {
+        this.nodes = new NodeTools(adapter.node);
+        this.components = new ComponentTools(adapter.component);
+    }
 
     getTools(): ToolDefinition[] { return []; }
 
@@ -42,7 +43,8 @@ export class UITools implements ToolExecutor {
         return {
             success: true,
             data: {
-                cocosRange: '>=3.8.6 <3.9.0',
+                cocosRange: this.adapter.profile.versionRange,
+                adapterId: this.adapter.profile.adapterId,
                 count: components.length,
                 categories: Array.from(new Set(UI_COMPONENT_CATALOG.map((item) => item.category))),
                 components,
@@ -56,10 +58,7 @@ export class UITools implements ToolExecutor {
         if (!nodeUuid) return { success: false, error: 'nodeUuid is required' };
         const dump = await this.queryNode(nodeUuid);
         if (!dump) return { success: false, error: `Node not found: ${nodeUuid}` };
-        return {
-            success: true,
-            data: this.describeNode(dump, args.includeProperties !== false, args.includeCustom !== false)
-        };
+        return { success: true, data: this.describeNode(dump, args.includeProperties !== false, args.includeCustom !== false) };
     }
 
     private async componentSchema(args: any): Promise<ToolResponse> {
@@ -76,12 +75,7 @@ export class UITools implements ToolExecutor {
         }
         return {
             success: true,
-            data: {
-                nodeUuid,
-                componentType: match.type,
-                componentIndex: match.index,
-                properties
-            }
+            data: { nodeUuid, componentType: match.type, componentIndex: match.index, properties }
         };
     }
 
@@ -89,15 +83,20 @@ export class UITools implements ToolExecutor {
         const maxNodes = Math.max(1, Math.min(1000, Number(args.maxNodes) || 300));
         const includeProperties = Boolean(args.includeProperties);
         const includeCustom = args.includeCustom !== false;
-        const tree = await Editor.Message.request('scene', 'query-node-tree');
+        const tree = await this.adapter.scene.queryNodeTree();
+        const root = args.rootUuid ? this.findTreeNode(tree, String(args.rootUuid)) : tree;
+        if (!root) return { success: false, error: `Scene root not found: ${args.rootUuid}` };
+
         const flat: any[] = [];
+        let truncated = false;
         const walk = (node: any, path: string) => {
-            if (!node || flat.length >= maxNodes) return;
+            if (!node) return;
+            if (flat.length >= maxNodes) { truncated = true; return; }
             const currentPath = path ? `${path}/${node.name || 'Node'}` : (node.name || 'Node');
             flat.push({ uuid: node.uuid, path: currentPath });
             for (const child of node.children || []) walk(child, currentPath);
         };
-        walk(args.rootUuid ? this.findTreeNode(tree, String(args.rootUuid)) : tree, '');
+        walk(root, '');
 
         const results: any[] = [];
         for (let index = 0; index < flat.length; index += 12) {
@@ -112,12 +111,7 @@ export class UITools implements ToolExecutor {
 
         return {
             success: true,
-            data: {
-                scannedNodes: flat.length,
-                uiNodeCount: results.length,
-                truncated: flat.length >= maxNodes,
-                nodes: results
-            }
+            data: { scannedNodes: flat.length, uiNodeCount: results.length, truncated, nodes: results }
         };
     }
 
@@ -151,8 +145,8 @@ export class UITools implements ToolExecutor {
                 if (!result.success) throw new Error(result.error || `Failed to add ${type}`);
             }
 
-            const propertyGroups = args.componentProperties && typeof args.componentProperties === 'object'
-                ? args.componentProperties
+            const propertyGroups: Record<string, any> = args.componentProperties && typeof args.componentProperties === 'object'
+                ? { ...args.componentProperties }
                 : {};
             if (args.properties && typeof args.properties === 'object') propertyGroups[componentType] = args.properties;
             for (const [type, properties] of Object.entries(propertyGroups)) {
@@ -177,8 +171,9 @@ export class UITools implements ToolExecutor {
                 }
             };
         } catch (error: any) {
-            if (args.rollbackOnError !== false) await this.nodes.execute('delete_node', { uuid: nodeUuid }).catch(() => undefined);
-            return { success: false, error: error?.message || String(error), data: { nodeUuid, rolledBack: args.rollbackOnError !== false } };
+            const rollback = args.rollbackOnError !== false;
+            if (rollback) await this.nodes.execute('delete_node', { uuid: nodeUuid }).catch(() => undefined);
+            return { success: false, error: error?.message || String(error), data: { nodeUuid, rolledBack: rollback } };
         }
     }
 
@@ -187,9 +182,7 @@ export class UITools implements ToolExecutor {
         const componentType = normalizeUIComponentClass(args.componentType);
         if (!nodeUuid) return { success: false, error: 'nodeUuid is required' };
         const descriptor = findUIComponent(componentType);
-        const required = args.autoDependencies === false
-            ? [componentType]
-            : [...(descriptor?.dependencies || []), componentType];
+        const required = args.autoDependencies === false ? [componentType] : [...(descriptor?.dependencies || []), componentType];
         for (const type of Array.from(new Set(required))) {
             const result = await this.ensureComponent(nodeUuid, type);
             if (!result.success) return result;
@@ -223,11 +216,10 @@ export class UITools implements ToolExecutor {
         for (const [property, input] of Object.entries(properties)) {
             const resolved = await this.resolveReferences(input);
             const existing = match.component?.[property];
-            const propertyDump = this.buildPropertyDump(existing, resolved);
-            await Editor.Message.request('scene', 'set-property', {
+            await this.adapter.component.setSerializedProperty({
                 uuid: nodeUuid,
                 path: `__comps__.${match.index}.${property}`,
-                dump: propertyDump
+                dump: this.buildPropertyDump(existing, resolved)
             });
             updated.push(property);
         }
@@ -242,29 +234,21 @@ export class UITools implements ToolExecutor {
         if (!nodeUuid || !eventProperty) return { success: false, error: 'nodeUuid and eventProperty are required' };
         const descriptor = findUIComponent(componentType);
         if (descriptor && descriptor.eventProperties.length > 0 && !descriptor.eventProperties.includes(eventProperty)) {
-            return { success: false, error: `${eventProperty} is not a documented event property for ${componentType}`, data: { supported: descriptor.eventProperties } };
+            return {
+                success: false,
+                error: `${eventProperty} is not a documented event property for ${componentType}`,
+                data: { supported: descriptor.eventProperties }
+            };
         }
         const handlers = mode === 'clear' ? [] : (Array.isArray(args.handlers) ? args.handlers : [args.handler]).filter(Boolean);
-        const options = {
-            name: 'cocos-mcp-server',
-            method: 'configureUIEvent',
-            args: [nodeUuid, componentType, eventProperty, handlers, mode]
-        };
-        const result = await Editor.Message.request('scene', 'execute-scene-script', options);
-        if (result?.success) Editor.Message.send('scene', 'snapshot');
-        return result;
+        return this.adapter.ui.configureEvent(nodeUuid, componentType, eventProperty, handlers, mode as any);
     }
 
     private async listEvents(args: any): Promise<ToolResponse> {
         const nodeUuid = String(args.nodeUuid || '');
         const componentType = normalizeUIComponentClass(args.componentType);
         if (!nodeUuid) return { success: false, error: 'nodeUuid is required' };
-        const options = {
-            name: 'cocos-mcp-server',
-            method: 'getUIEventHandlers',
-            args: [nodeUuid, componentType, args.eventProperty || null]
-        };
-        return Editor.Message.request('scene', 'execute-scene-script', options);
+        return this.adapter.ui.listEvents(nodeUuid, componentType, args.eventProperty || null);
     }
 
     private async validateScene(args: any): Promise<ToolResponse> {
@@ -287,26 +271,29 @@ export class UITools implements ToolExecutor {
                 }
             }
         }
+        const valid = issues.every((issue) => issue.severity !== 'error');
         return {
-            success: issues.every((issue) => issue.severity !== 'error'),
+            success: valid,
             data: {
                 scannedNodes: queried.data.scannedNodes,
                 uiNodeCount: queried.data.uiNodeCount,
                 issueCount: issues.length,
                 issues
             },
-            ...(issues.length ? { error: `${issues.length} UI validation issue(s) found` } : {})
+            ...(valid ? {} : { error: `${issues.length} UI validation issue(s) found` })
         };
     }
 
     private async ensureComponent(nodeUuid: string, componentType: string): Promise<ToolResponse> {
         const dump = await this.queryNode(nodeUuid);
-        if (this.findComponent(dump, componentType)) return { success: true, data: { nodeUuid, componentType, existed: true } };
+        if (this.findComponent(dump, componentType)) {
+            return { success: true, data: { nodeUuid, componentType, existed: true } };
+        }
         return this.components.execute('add_component', { nodeUuid, componentType });
     }
 
-    private async queryNode(nodeUuid: string): Promise<any> {
-        return Editor.Message.request('scene', 'query-node', nodeUuid);
+    private queryNode(nodeUuid: string): Promise<any> {
+        return this.adapter.node.queryNode(nodeUuid);
     }
 
     private findComponent(nodeDump: any, requested: string): { component: any; index: number; type: string } | null {
@@ -320,14 +307,18 @@ export class UITools implements ToolExecutor {
     }
 
     private describeNode(nodeDump: any, includeProperties: boolean, includeCustom: boolean): any {
+        const allComponents = nodeDump?.__comps__ || [];
+        const nodeIsUI = allComponents.some((component: any) => {
+            const type = this.componentType(component);
+            return Boolean(findUIComponent(type)) || this.normalizeType(type) === 'uitransform';
+        });
         const uiComponents: any[] = [];
-        for (let index = 0; index < (nodeDump?.__comps__ || []).length; index++) {
-            const component = nodeDump.__comps__[index];
+        for (let index = 0; index < allComponents.length; index++) {
+            const component = allComponents[index];
             const type = this.componentType(component);
             const catalog = findUIComponent(type);
             const isUI = Boolean(catalog) || this.normalizeType(type) === 'uitransform';
-            if (!isUI && !includeCustom) continue;
-            if (!isUI && !this.looksLikeCustomUI(component)) continue;
+            if (!isUI && !(includeCustom && nodeIsUI)) continue;
             uiComponents.push({
                 index,
                 type,
@@ -366,13 +357,12 @@ export class UITools implements ToolExecutor {
     }
 
     private buildPropertyDump(existing: any, value: any): any {
+        const dump: any = { value };
         if (existing && typeof existing === 'object' && !Array.isArray(existing)) {
-            const dump: any = { value };
             if (existing.type) dump.type = existing.type;
             if (existing.extends) dump.extends = existing.extends;
-            return dump;
         }
-        return { value };
+        return dump;
     }
 
     private async resolveReferences(value: any): Promise<any> {
@@ -382,7 +372,9 @@ export class UITools implements ToolExecutor {
         if (value.$asset) return { uuid: String(value.$asset) };
         if (value.$component) {
             const reference = value.$component;
-            const target = await this.queryNode(String(reference.nodeUuid || reference.node));
+            const targetUuid = String(reference.nodeUuid || reference.node || '');
+            if (!targetUuid || !reference.type) throw new Error('$component requires nodeUuid (or node) and type');
+            const target = await this.queryNode(targetUuid);
             const match = this.findComponent(target, normalizeUIComponentClass(reference.type));
             if (!match) throw new Error(`Referenced component ${reference.type} not found`);
             const uuid = this.dumpValue(match.component.uuid);
@@ -400,11 +392,6 @@ export class UITools implements ToolExecutor {
 
     private normalizeType(value: string): string {
         return String(value || '').replace(/^cc\./, '').toLowerCase();
-    }
-
-    private looksLikeCustomUI(component: any): boolean {
-        const name = this.normalizeType(this.componentType(component));
-        return name.includes('ui') || name.includes('view') || name.includes('panel') || name.includes('screen') || name.includes('dialog');
     }
 
     private isInternalKey(key: string): boolean {
