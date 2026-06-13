@@ -5,6 +5,15 @@ import { CreateNodeRequest, NodeAdapter, SetNodeParentRequest, SetNodePropertyRe
 import { PrefabAdapter } from './contracts/prefab-adapter';
 import { ProjectAdapter, ProjectDescriptor } from './contracts/project-adapter';
 import {
+    RuntimeAdapter,
+    RuntimeKeyboardInput,
+    RuntimeMouseInput,
+    RuntimeScreenshotOptions,
+    RuntimeSessionInfo,
+    RuntimeStartOptions,
+    RuntimeTouchInput
+} from './contracts/runtime-adapter';
+import {
     MoveArrayElementRequest,
     PasteNodeRequest,
     RemoveArrayElementRequest,
@@ -129,4 +138,18 @@ export class UnavailableBuildAdapter implements BuildAdapter {
 export class UnavailableProjectAdapter implements ProjectAdapter {
     describe(): ProjectDescriptor { throw unavailable('Project'); }
     queryConfig(_name: string): Promise<any> { return rejected('Project'); }
+}
+
+export class UnavailableRuntimeAdapter implements RuntimeAdapter {
+    start(_options?: RuntimeStartOptions): Promise<RuntimeSessionInfo> { return rejected('Runtime'); }
+    stop(): Promise<RuntimeSessionInfo> { return rejected('Runtime'); }
+    status(): Promise<RuntimeSessionInfo> { return rejected('Runtime'); }
+    reload(_ignoreCache?: boolean): Promise<void> { return rejected('Runtime'); }
+    evaluate(_expression: string, _awaitPromise?: boolean): Promise<any> { return rejected('Runtime'); }
+    waitFor(_expression: string, _timeoutMs?: number, _intervalMs?: number): Promise<any> { return rejected('Runtime'); }
+    screenshot(_options?: RuntimeScreenshotOptions): Promise<{ base64: string; mimeType: string; filePath?: string }> { return rejected('Runtime'); }
+    mouse(_input: RuntimeMouseInput): Promise<void> { return rejected('Runtime'); }
+    keyboard(_input: RuntimeKeyboardInput): Promise<void> { return rejected('Runtime'); }
+    touch(_input: RuntimeTouchInput): Promise<void> { return rejected('Runtime'); }
+    logs(_sinceSequence?: number, _clear?: boolean): Promise<any> { return rejected('Runtime'); }
 }
