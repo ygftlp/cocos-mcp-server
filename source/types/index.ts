@@ -39,6 +39,8 @@ export interface ToolResponse {
         tool?: string;
         durationMs?: number;
         timestamp?: string;
+        adapterId?: string;
+        creatorVersion?: string;
     };
 }
 
@@ -145,6 +147,7 @@ export interface ToolMeta {
     sideEffect: boolean;
     cost: 'low' | 'medium' | 'high';
     scope: string[];
+    requires?: string[];
 }
 
 export interface ToolConfig {
