@@ -1,9 +1,10 @@
 import { NodeAdapter } from '../adapters/contracts/node-adapter';
+import { selectCocosAdapter } from '../adapters/selector';
 import { ToolDefinition, ToolResponse, ToolExecutor, NodeInfo } from '../types';
 
 // Model-facing node adapter. Every version-specific Editor response is normalized into plain JSON.
 export class NodeTools implements ToolExecutor {
-    constructor(private readonly adapter: NodeAdapter) {}
+    constructor(private readonly adapter: NodeAdapter = selectCocosAdapter().node) {}
 
     getTools(): ToolDefinition[] {
         return [];
