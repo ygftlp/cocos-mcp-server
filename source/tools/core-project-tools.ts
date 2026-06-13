@@ -1,23 +1,30 @@
+import { CocosAdapter } from '../adapters/contracts';
+import { selectCocosAdapter } from '../adapters/selector';
 import { ToolDefinition, ToolExecutor, ToolResponse } from '../types';
 import { EnhancedProjectTools } from './enhanced-project-tools';
 import { GameProjectTools } from './game-project-tools';
 import { buildActionSchema, executeAction, ToolActionMap } from './core-action-utils';
 
 export class ProjectCoreTools implements ToolExecutor {
-    private project = new EnhancedProjectTools();
-    private gameProject = new GameProjectTools();
+    private readonly project: EnhancedProjectTools;
+    private readonly gameProject: GameProjectTools;
+    private readonly actions: ToolActionMap;
 
-    private actions: ToolActionMap = {
-        manage: {
-            info: { executor: this.project, method: 'get_project_info' },
-            settings: { executor: this.project, method: 'get_project_settings' }
-        },
-        build_system: {
-            get_settings: { executor: this.project, method: 'get_build_settings' },
-            open_panel: { executor: this.project, method: 'open_build_panel' },
-            check_status: { executor: this.project, method: 'check_builder_status' }
-        }
-    };
+    constructor(adapter: CocosAdapter = selectCocosAdapter()) {
+        this.project = new EnhancedProjectTools(adapter);
+        this.gameProject = new GameProjectTools(adapter);
+        this.actions = {
+            manage: {
+                info: { executor: this.project, method: 'get_project_info' },
+                settings: { executor: this.project, method: 'get_project_settings' }
+            },
+            build_system: {
+                get_settings: { executor: this.project, method: 'get_build_settings' },
+                open_panel: { executor: this.project, method: 'open_build_panel' },
+                check_status: { executor: this.project, method: 'check_builder_status' }
+            }
+        };
+    }
 
     getTools(): ToolDefinition[] {
         return [
