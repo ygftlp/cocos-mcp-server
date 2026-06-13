@@ -9,7 +9,7 @@
         "preinstall": "node ./scripts/preinstall.js",
         "build": "tsc",
         "watch": "tsc -w",
-        "test": "npm run build && node scripts/test-compat.js && node scripts/test-regressions.js",
+        "test": "npm run build && node scripts/test-compat.js && node scripts/test-ui-compat.js && node scripts/test-regressions.js",
         "check": "npm run test"
     },
     "description": "i18n:cocos-mcp-server.description",
