@@ -9,7 +9,7 @@
         "preinstall": "node ./scripts/preinstall.js",
         "build": "tsc",
         "watch": "tsc -w",
-        "test": "npm run build && node scripts/test-compat.js && node scripts/test-ui-compat.js && node scripts/test-domain-adapters.js && node scripts/test-component-ui-adapters.js && node scripts/test-asset-build-adapters.js && node scripts/test-prefab-advanced-asset-adapters.js && node scripts/test-regressions.js",
+        "test": "npm run build && node scripts/test-compat.js && node scripts/test-ui-compat.js && node scripts/test-domain-adapters.js && node scripts/test-component-ui-adapters.js && node scripts/test-asset-build-adapters.js && node scripts/test-prefab-advanced-asset-adapters.js && node scripts/test-scene-advanced-adapter.js && node scripts/test-regressions.js",
         "check": "npm run test"
     },
     "description": "i18n:cocos-mcp-server.description",

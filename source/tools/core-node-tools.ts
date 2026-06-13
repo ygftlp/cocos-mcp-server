@@ -1,4 +1,6 @@
 import { NodeAdapter } from '../adapters/contracts/node-adapter';
+import { SceneAdvancedAdapter } from '../adapters/contracts/scene-advanced-adapter';
+import { selectCocosAdapter } from '../adapters/selector';
 import { ToolDefinition, ToolExecutor, ToolResponse } from '../types';
 import { NodeTools } from './node-tools';
 import { SceneAdvancedTools } from './scene-advanced-tools';
@@ -6,11 +8,15 @@ import { buildActionSchema, executeAction, ToolActionMap } from './core-action-u
 
 export class NodeCoreTools implements ToolExecutor {
     private readonly node: NodeTools;
-    private readonly advanced = new SceneAdvancedTools();
+    private readonly advanced: SceneAdvancedTools;
     private readonly actions: ToolActionMap;
 
-    constructor(nodeAdapter: NodeAdapter) {
+    constructor(
+        nodeAdapter: NodeAdapter = selectCocosAdapter().node,
+        advancedAdapter: SceneAdvancedAdapter = selectCocosAdapter().sceneAdvanced
+    ) {
         this.node = new NodeTools(nodeAdapter);
+        this.advanced = new SceneAdvancedTools(advancedAdapter);
         this.actions = {
             query: {
                 info: { executor: this.node, method: 'get_node_info' },

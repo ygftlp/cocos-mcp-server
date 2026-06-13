@@ -4,6 +4,12 @@ import { ComponentAdapter, SetComponentPropertyRequest } from './contracts/compo
 import { CreateNodeRequest, NodeAdapter, SetNodeParentRequest, SetNodePropertyRequest } from './contracts/node-adapter';
 import { PrefabAdapter } from './contracts/prefab-adapter';
 import { ProjectAdapter, ProjectDescriptor } from './contracts/project-adapter';
+import {
+    MoveArrayElementRequest,
+    PasteNodeRequest,
+    RemoveArrayElementRequest,
+    SceneAdvancedAdapter
+} from './contracts/scene-advanced-adapter';
 import { CreateSceneRequest, SceneAdapter } from './contracts/scene-adapter';
 import { UIAdapter, UIEventHandlerInput, UIEventMode } from './contracts/ui-adapter';
 
@@ -36,6 +42,32 @@ export class UnavailableSceneAdapter implements SceneAdapter {
     createScene(_request: CreateSceneRequest): Promise<any> { return rejected('Scene'); }
     openSaveAsDialog(): Promise<void> { return rejected('Scene'); }
     closeScene(): Promise<void> { return rejected('Scene'); }
+}
+
+export class UnavailableSceneAdvancedAdapter implements SceneAdvancedAdapter {
+    resetProperty(_uuid: string, _path: string): Promise<void> { return rejected('SceneAdvanced'); }
+    moveArrayElement(_request: MoveArrayElementRequest): Promise<void> { return rejected('SceneAdvanced'); }
+    removeArrayElement(_request: RemoveArrayElementRequest): Promise<void> { return rejected('SceneAdvanced'); }
+    copyNode(_uuids: string | string[]): Promise<any> { return rejected('SceneAdvanced'); }
+    pasteNode(_request: PasteNodeRequest): Promise<any> { return rejected('SceneAdvanced'); }
+    cutNode(_uuids: string | string[]): Promise<any> { return rejected('SceneAdvanced'); }
+    resetNode(_uuid: string): Promise<void> { return rejected('SceneAdvanced'); }
+    resetComponent(_uuid: string): Promise<void> { return rejected('SceneAdvanced'); }
+    restorePrefab(_nodeUuid: string, _assetUuid: string): Promise<void> { return rejected('SceneAdvanced'); }
+    executeComponentMethod(_uuid: string, _name: string, _args: any[]): Promise<any> { return rejected('SceneAdvanced'); }
+    executeSceneScript(_name: string, _method: string, _args: any[]): Promise<any> { return rejected('SceneAdvanced'); }
+    snapshot(): Promise<void> { return rejected('SceneAdvanced'); }
+    abortSnapshot(): Promise<void> { return rejected('SceneAdvanced'); }
+    beginRecording(_nodeUuid: string): Promise<string> { return rejected('SceneAdvanced'); }
+    endRecording(_undoId: string): Promise<void> { return rejected('SceneAdvanced'); }
+    cancelRecording(_undoId: string): Promise<void> { return rejected('SceneAdvanced'); }
+    softReload(): Promise<void> { return rejected('SceneAdvanced'); }
+    queryReady(): Promise<boolean> { return rejected('SceneAdvanced'); }
+    queryDirty(): Promise<boolean> { return rejected('SceneAdvanced'); }
+    queryClasses(_extendsClass?: string): Promise<any[]> { return rejected('SceneAdvanced'); }
+    queryComponents(): Promise<any[]> { return rejected('SceneAdvanced'); }
+    queryComponentHasScript(_className: string): Promise<boolean> { return rejected('SceneAdvanced'); }
+    queryNodesByAssetUuid(_assetUuid: string): Promise<string[]> { return rejected('SceneAdvanced'); }
 }
 
 export class UnavailableComponentAdapter implements ComponentAdapter {
