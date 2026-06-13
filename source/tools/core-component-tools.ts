@@ -1,4 +1,5 @@
 import { ComponentAdapter } from '../adapters/contracts/component-adapter';
+import { selectCocosAdapter } from '../adapters/selector';
 import { ToolDefinition, ToolExecutor, ToolResponse } from '../types';
 import { ComponentTools } from './component-tools';
 import { SceneAdvancedTools } from './scene-advanced-tools';
@@ -9,7 +10,7 @@ export class ComponentCoreTools implements ToolExecutor {
     private readonly advanced = new SceneAdvancedTools();
     private readonly actions: ToolActionMap;
 
-    constructor(componentAdapter: ComponentAdapter) {
+    constructor(componentAdapter: ComponentAdapter = selectCocosAdapter().component) {
         this.component = new ComponentTools(componentAdapter);
         this.actions = {
             manage: {
