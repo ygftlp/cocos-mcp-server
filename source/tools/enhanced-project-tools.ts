@@ -1,15 +1,19 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { spawn } from 'child_process';
+import { CocosAdapter } from '../adapters/contracts';
+import { selectCocosAdapter } from '../adapters/selector';
 import { ToolExecutor, ToolResponse } from '../types';
 import { ProjectTools } from './project-tools';
 
 export class EnhancedProjectTools implements ToolExecutor {
-    private readonly base = new ProjectTools();
+    private readonly base: ProjectTools;
 
-    getTools() {
-        return [];
+    constructor(private readonly adapter: CocosAdapter = selectCocosAdapter()) {
+        this.base = new ProjectTools(adapter);
     }
+
+    getTools() { return []; }
 
     async execute(toolName: string, args: any): Promise<ToolResponse> {
         switch (toolName) {
@@ -17,6 +21,10 @@ export class EnhancedProjectTools implements ToolExecutor {
             case 'build_project': return this.executeBuildProject(args || {});
             default: return this.base.execute(toolName, args);
         }
+    }
+
+    private project() {
+        return this.adapter.project.describe();
     }
 
     private async quickStartProject(args: any): Promise<ToolResponse> {
@@ -31,13 +39,14 @@ export class EnhancedProjectTools implements ToolExecutor {
             return { success: false, error: error.message };
         }
 
-        const files = this.createStarterFiles(template);
+        const project = this.project();
+        const files = this.createStarterFiles(template, project.name);
         const created: string[] = [];
         const updated: string[] = [];
         const skipped: string[] = [];
         for (const [relativePath, content] of Object.entries(files)) {
             const destination = path.join(targetRoot, relativePath);
-            const projectRelative = path.relative(Editor.Project.path, destination).replace(/\\/g, '/');
+            const projectRelative = path.relative(project.path, destination).replace(/\\/g, '/');
             const exists = fs.existsSync(destination);
             if (exists && !overwrite) {
                 skipped.push(projectRelative);
@@ -51,10 +60,10 @@ export class EnhancedProjectTools implements ToolExecutor {
         }
 
         if (!dryRun) {
-            const relativeToAssets = path.relative(path.join(Editor.Project.path, 'assets'), targetRoot).replace(/\\/g, '/');
+            const relativeToAssets = path.relative(path.join(project.path, 'assets'), targetRoot).replace(/\\/g, '/');
             const dbUrl = relativeToAssets && relativeToAssets !== '.' ? `db://assets/${relativeToAssets}` : 'db://assets';
             try {
-                await Editor.Message.request('asset-db', 'refresh-asset', dbUrl);
+                await this.adapter.asset.refreshAsset(dbUrl);
             } catch (error) {
                 console.warn('[EnhancedProjectTools] Asset refresh failed:', error);
             }
@@ -64,7 +73,7 @@ export class EnhancedProjectTools implements ToolExecutor {
             success: true,
             data: {
                 template,
-                root: path.relative(Editor.Project.path, targetRoot).replace(/\\/g, '/'),
+                root: path.relative(project.path, targetRoot).replace(/\\/g, '/'),
                 dryRun,
                 created,
                 updated,
@@ -76,7 +85,9 @@ export class EnhancedProjectTools implements ToolExecutor {
                     'Call project_build when ready to produce a platform build.'
                 ]
             },
-            message: dryRun ? `Quick-start preview generated for the ${template} template` : `Cocos ${template} starter structure created`
+            message: dryRun
+                ? `Quick-start preview generated for the ${template} template`
+                : `Cocos ${template} starter structure created`
         };
     }
 
@@ -94,10 +105,14 @@ export class EnhancedProjectTools implements ToolExecutor {
         const errors: string[] = [];
         if (mode === 'editor' || mode === 'auto') {
             try {
-                const ready = await Editor.Message.request('builder', 'query-worker-ready');
-                if (ready === false) throw new Error('Cocos Builder worker is not ready');
-                const result = await Editor.Message.request('builder', 'build', buildOptions);
-                return { success: true, data: { mode: 'editor', options: buildOptions, result }, message: `Build started for ${buildOptions.platform}` };
+                const ready = await this.adapter.build.queryWorkerReady();
+                if (!ready) throw new Error('Cocos Builder worker is not ready');
+                const result = await this.adapter.build.build(buildOptions);
+                return {
+                    success: true,
+                    data: { mode: 'editor', options: buildOptions, result },
+                    message: `Build started for ${buildOptions.platform}`
+                };
             } catch (error: any) {
                 errors.push(`Editor build failed: ${error?.message || String(error)}`);
                 if (mode === 'editor') return this.buildFailure(args, buildOptions, errors);
@@ -107,7 +122,11 @@ export class EnhancedProjectTools implements ToolExecutor {
         if ((mode === 'cli' || mode === 'auto') && args.creatorPath) {
             try {
                 const result = await this.runCliBuild(args.creatorPath, buildOptions, args.timeoutMs);
-                return { success: true, data: { mode: 'cli', options: buildOptions, ...result }, message: `CLI build completed for ${buildOptions.platform}` };
+                return {
+                    success: true,
+                    data: { mode: 'cli', options: buildOptions, ...result },
+                    message: `CLI build completed for ${buildOptions.platform}`
+                };
             } catch (error: any) {
                 errors.push(`CLI build failed: ${error?.message || String(error)}`);
             }
@@ -121,7 +140,7 @@ export class EnhancedProjectTools implements ToolExecutor {
         let panelOpened = false;
         if (args.fallbackOpenPanel !== false) {
             try {
-                await Editor.Message.request('builder', 'open');
+                await this.adapter.build.openPanel();
                 panelOpened = true;
             } catch (error: any) {
                 errors.push(`Could not open Build panel: ${error?.message || String(error)}`);
@@ -130,27 +149,43 @@ export class EnhancedProjectTools implements ToolExecutor {
         return {
             success: false,
             error: errors.join('; ') || 'Build failed',
-            data: { options: buildOptions, panelOpened, cliCommand: this.buildCliPreview(args.creatorPath, buildOptions) }
+            data: {
+                options: buildOptions,
+                panelOpened,
+                cliCommand: this.buildCliPreview(args.creatorPath, buildOptions)
+            }
         };
     }
 
     private normalizeBuildOptions(args: any): Record<string, any> {
         const supplied = args.options && typeof args.options === 'object' ? args.options : {};
-        const options: Record<string, any> = { ...supplied, platform: args.platform || supplied.platform || 'web-desktop' };
-        for (const [key, value] of Object.entries({ debug: args.debug, outputName: args.outputName, buildPath: args.buildPath, name: args.name, stage: args.stage })) {
+        const options: Record<string, any> = {
+            ...supplied,
+            platform: args.platform || supplied.platform || 'web-desktop'
+        };
+        for (const [key, value] of Object.entries({
+            debug: args.debug,
+            outputName: args.outputName,
+            buildPath: args.buildPath,
+            name: args.name,
+            stage: args.stage
+        })) {
             if (value !== undefined && value !== null && value !== '') options[key] = value;
         }
         return options;
     }
 
     private runCliBuild(creatorPath: string, buildOptions: Record<string, any>, requestedTimeout?: number): Promise<any> {
+        const projectPath = this.project().path;
         return new Promise((resolve, reject) => {
-            const timeoutMs = Number.isFinite(Number(requestedTimeout)) ? Math.max(1000, Math.min(Number(requestedTimeout), 60 * 60 * 1000)) : 20 * 60 * 1000;
-            const child = spawn(creatorPath, ['--project', Editor.Project.path, '--build', this.serializeBuildOptions(buildOptions)], {
-                cwd: Editor.Project.path,
-                windowsHide: true,
-                shell: false
-            });
+            const timeoutMs = Number.isFinite(Number(requestedTimeout))
+                ? Math.max(1000, Math.min(Number(requestedTimeout), 60 * 60 * 1000))
+                : 20 * 60 * 1000;
+            const child = spawn(
+                creatorPath,
+                ['--project', projectPath, '--build', this.serializeBuildOptions(buildOptions)],
+                { cwd: projectPath, windowsHide: true, shell: false }
+            );
             let stdout = '';
             let stderr = '';
             let settled = false;
@@ -182,29 +217,42 @@ export class EnhancedProjectTools implements ToolExecutor {
     }
 
     private buildCliPreview(creatorPath: string | undefined, options: Record<string, any>): string {
-        return `"${creatorPath || '<CocosCreator executable>'}" --project "${Editor.Project.path}" --build "${this.serializeBuildOptions(options)}"`;
+        return `"${creatorPath || '<CocosCreator executable>'}" --project "${this.project().path}" --build "${this.serializeBuildOptions(options)}"`;
     }
 
     private resolveProjectAssetPath(input: string): string {
         const normalized = input.replace(/\\/g, '/').replace(/^\.\//, '');
-        if (path.isAbsolute(normalized) || normalized.includes('\0')) throw new Error('root must be a project-relative path under assets/');
-        const withAssets = normalized === 'assets' || normalized.startsWith('assets/') ? normalized : `assets/${normalized}`;
-        const assetsRoot = path.resolve(Editor.Project.path, 'assets');
-        const target = path.resolve(Editor.Project.path, withAssets);
-        if (target !== assetsRoot && !target.startsWith(`${assetsRoot}${path.sep}`)) throw new Error('root must stay inside the project assets directory');
+        if (path.isAbsolute(normalized) || normalized.includes('\0')) {
+            throw new Error('root must be a project-relative path under assets/');
+        }
+        const withAssets = normalized === 'assets' || normalized.startsWith('assets/')
+            ? normalized
+            : `assets/${normalized}`;
+        const projectPath = this.project().path;
+        const assetsRoot = path.resolve(projectPath, 'assets');
+        const target = path.resolve(projectPath, withAssets);
+        if (target !== assetsRoot && !target.startsWith(`${assetsRoot}${path.sep}`)) {
+            throw new Error('root must stay inside the project assets directory');
+        }
         return target;
     }
 
-    private createStarterFiles(template: string): Record<string, string> {
+    private createStarterFiles(template: string, projectName: string): Record<string, string> {
         const dimension = template === '3d' ? '3d' : '2d';
         const generatedAt = new Date().toISOString();
         return {
-            'scripts/core/GameConfig.ts': `export const GameConfig = {\n    projectName: ${JSON.stringify(Editor.Project.name)},\n    template: ${JSON.stringify(template)},\n    dimension: ${JSON.stringify(dimension)},\n    startScene: 'main'\n} as const;\n`,
+            'scripts/core/GameConfig.ts': `export const GameConfig = {\n    projectName: ${JSON.stringify(projectName)},\n    template: ${JSON.stringify(template)},\n    dimension: ${JSON.stringify(dimension)},\n    startScene: 'main'\n} as const;\n`,
             'scripts/core/EventBus.ts': `type Listener<T = unknown> = (payload: T) => void;\n\nexport class EventBus {\n    private static listeners = new Map<string, Set<Listener>>();\n    static on<T>(event: string, listener: Listener<T>): () => void {\n        const listeners = this.listeners.get(event) || new Set<Listener>();\n        listeners.add(listener as Listener);\n        this.listeners.set(event, listeners);\n        return () => this.off(event, listener);\n    }\n    static off<T>(event: string, listener: Listener<T>): void { this.listeners.get(event)?.delete(listener as Listener); }\n    static emit<T>(event: string, payload: T): void { this.listeners.get(event)?.forEach((listener) => listener(payload)); }\n    static clear(): void { this.listeners.clear(); }\n}\n`,
             'scripts/core/GameBootstrap.ts': `import { director, game, Node } from 'cc';\nimport { GameConfig } from './GameConfig';\n\nexport class GameBootstrap {\n    private static initialized = false;\n    static initialize(root: Node): void {\n        if (this.initialized) return;\n        this.initialized = true;\n        game.addPersistRootNode(root);\n        console.info('[GameBootstrap] initialized', GameConfig);\n    }\n    static loadScene(sceneName: string = GameConfig.startScene): Promise<void> {\n        return new Promise((resolve, reject) => director.loadScene(sceneName, (error) => error ? reject(error) : resolve()));\n    }\n}\n`,
             'scripts/components/SceneEntry.ts': `import { _decorator, Component } from 'cc';\nimport { GameBootstrap } from '../core/GameBootstrap';\nconst { ccclass } = _decorator;\n@ccclass('SceneEntry')\nexport class SceneEntry extends Component { protected onLoad(): void { GameBootstrap.initialize(this.node); } }\n`,
-            'data/project-context.json': `${JSON.stringify({ project: Editor.Project.name, template, dimension, generatedBy: 'cocos-mcp-server', generatedAt }, null, 2)}\n`,
-            'README.md': `# ${Editor.Project.name} starter\n\nGenerated by cocos-mcp-server using the **${template}** template.\n\nAttach \`SceneEntry\` to the first scene root, then use MCP scene, UI, node, and component tools to assemble the game.\n`
+            'data/project-context.json': `${JSON.stringify({
+                project: projectName,
+                template,
+                dimension,
+                generatedBy: 'cocos-mcp-server',
+                generatedAt
+            }, null, 2)}\n`,
+            'README.md': `# ${projectName} starter\n\nGenerated by cocos-mcp-server using the **${template}** template.\n\nAttach \`SceneEntry\` to the first scene root, then use MCP scene, UI, node, and component tools to assemble the game.\n`
         };
     }
 }

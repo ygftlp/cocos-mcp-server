@@ -1,81 +1,95 @@
-import { ToolDefinition, ToolResponse, ToolExecutor, ProjectInfo, AssetInfo } from '../types';
 import * as fs from 'fs';
 import * as path from 'path';
+import { CocosAdapter } from '../adapters/contracts';
+import { selectCocosAdapter } from '../adapters/selector';
+import { AssetInfo, ProjectInfo, ToolDefinition, ToolExecutor, ToolResponse } from '../types';
 
 export class ProjectTools implements ToolExecutor {
+    constructor(private readonly adapter: CocosAdapter = selectCocosAdapter()) {}
+
     getTools(): ToolDefinition[] { return []; }
 
     async execute(toolName: string, args: any): Promise<ToolResponse> {
-        const a = args || {};
+        const input = args || {};
         switch (toolName) {
             case 'run_project':
             case 'build_project':
-            case 'open_build_panel': return this.openBuildPanel(a.platform);
+            case 'open_build_panel': return this.openBuildPanel(input.platform);
             case 'get_project_info': return this.getProjectInfo();
-            case 'get_project_settings': return this.getProjectSettings(a.category);
-            case 'refresh_assets': return this.refreshAssets(a.folder);
-            case 'import_asset': return this.importAsset(a.sourcePath, a.targetFolder);
-            case 'get_asset_info': return this.getAssetInfo(a.assetPath);
-            case 'get_assets': return this.getAssets(a.type, a.folder);
+            case 'get_project_settings': return this.getProjectSettings(input.category);
+            case 'refresh_assets': return this.refreshAssets(input.folder);
+            case 'import_asset': return this.importAsset(input.sourcePath, input.targetFolder);
+            case 'get_asset_info': return this.getAssetInfo(input.assetPath);
+            case 'get_assets': return this.getAssets(input.type, input.folder);
             case 'get_build_settings':
             case 'check_builder_status': return this.getBuildSettings();
             case 'start_preview_server':
             case 'stop_preview_server': return { success: false, error: 'Preview server control is not supported through MCP API' };
-            case 'create_asset': return this.createAsset(a.url, a.content, a.overwrite);
-            case 'copy_asset': return this.copyOrMove('copy-asset', a.source, a.target, a.overwrite);
-            case 'move_asset': return this.copyOrMove('move-asset', a.source, a.target, a.overwrite);
-            case 'delete_asset': return this.deleteAsset(a.url);
-            case 'save_asset': return this.saveAsset(a.url, a.content);
-            case 'reimport_asset': return this.reimportAsset(a.url);
-            case 'query_asset_path': return this.queryAsset('query-path', 'path', a.url);
-            case 'query_asset_uuid': return this.queryAsset('query-uuid', 'uuid', a.url);
-            case 'query_asset_url': return this.queryAsset('query-url', 'url', a.uuid);
-            case 'find_asset_by_name': return this.findAssetByName(a);
-            case 'get_asset_details': return this.getAssetDetails(a.assetPath, a.includeSubAssets);
+            case 'create_asset': return this.createAsset(input.url, input.content, input.overwrite);
+            case 'copy_asset': return this.copyOrMove('copy', input.source, input.target, input.overwrite);
+            case 'move_asset': return this.copyOrMove('move', input.source, input.target, input.overwrite);
+            case 'delete_asset': return this.deleteAsset(input.url);
+            case 'save_asset': return this.saveAsset(input.url, input.content);
+            case 'reimport_asset': return this.reimportAsset(input.url);
+            case 'query_asset_path': return this.queryAsset('path', input.url);
+            case 'query_asset_uuid': return this.queryAsset('uuid', input.url);
+            case 'query_asset_url': return this.queryAsset('url', input.uuid);
+            case 'find_asset_by_name': return this.findAssetByName(input);
+            case 'get_asset_details': return this.getAssetDetails(input.assetPath, input.includeSubAssets);
             default: throw new Error(`Unknown tool: ${toolName}`);
         }
     }
 
-    private request(channel: string, message: string, ...args: any[]): Promise<any> {
-        return (Editor.Message.request as any)(channel, message, ...args);
-    }
-
-    private fail(error: any): ToolResponse {
+    private failure(error: any): ToolResponse {
         return { success: false, error: error?.message || String(error) };
     }
 
     private async openBuildPanel(platform = 'browser'): Promise<ToolResponse> {
         try {
-            await this.request('builder', 'open');
+            await this.adapter.build.openPanel();
             return { success: true, data: { platform }, message: 'Build panel opened' };
-        } catch (error: any) { return this.fail(error); }
+        } catch (error: any) {
+            return this.failure(error);
+        }
     }
 
     private async getProjectInfo(): Promise<ToolResponse> {
-        const info: ProjectInfo = {
-            name: Editor.Project.name,
-            path: Editor.Project.path,
-            uuid: Editor.Project.uuid,
-            version: (Editor.Project as any).version || '1.0.0',
-            cocosVersion: (Editor as any).versions?.cocos || 'Unknown'
-        };
+        let descriptor: ProjectInfo;
         try {
-            return { success: true, data: { ...info, config: await this.request('project', 'query-config', 'project') } };
-        } catch { return { success: true, data: info }; }
+            descriptor = this.adapter.project.describe();
+        } catch (error: any) {
+            return this.failure(error);
+        }
+        try {
+            const config = await this.adapter.project.queryConfig('project');
+            return { success: true, data: { ...descriptor, config } };
+        } catch {
+            return { success: true, data: descriptor };
+        }
     }
 
     private async getProjectSettings(category = 'general'): Promise<ToolResponse> {
-        const configs: Record<string, string> = { general: 'project', physics: 'physics', render: 'render', assets: 'asset-db' };
+        const configs: Record<string, string> = {
+            general: 'project', physics: 'physics', render: 'render', assets: 'asset-db'
+        };
         try {
-            return { success: true, data: { category, config: await this.request('project', 'query-config', configs[category] || 'project') } };
-        } catch (error: any) { return this.fail(error); }
+            return {
+                success: true,
+                data: { category, config: await this.adapter.project.queryConfig(configs[category] || 'project') }
+            };
+        } catch (error: any) {
+            return this.failure(error);
+        }
     }
 
     private async refreshAssets(folder = 'db://assets'): Promise<ToolResponse> {
+        const target = folder || 'db://assets';
         try {
-            await this.request('asset-db', 'refresh-asset', folder || 'db://assets');
-            return { success: true, data: { folder: folder || 'db://assets' } };
-        } catch (error: any) { return this.fail(error); }
+            await this.adapter.asset.refreshAsset(target);
+            return { success: true, data: { folder: target } };
+        } catch (error: any) {
+            return this.failure(error);
+        }
     }
 
     private async importAsset(sourcePath: string, targetFolder: string): Promise<ToolResponse> {
@@ -85,8 +99,13 @@ export class ProjectTools implements ToolExecutor {
             ? targetFolder.replace(/\/$/, '')
             : `db://assets/${targetFolder.replace(/^\/|\/$/g, '')}`;
         try {
-            return { success: true, data: await this.request('asset-db', 'import-asset', sourcePath, `${folder}/${path.basename(sourcePath)}`) };
-        } catch (error: any) { return this.fail(error); }
+            return {
+                success: true,
+                data: await this.adapter.asset.importAsset(sourcePath, `${folder}/${path.basename(sourcePath)}`)
+            };
+        } catch (error: any) {
+            return this.failure(error);
+        }
     }
 
     private normalizeAsset(asset: any): AssetInfo {
@@ -97,16 +116,25 @@ export class ProjectTools implements ToolExecutor {
             type: String(asset?.type || 'unknown'),
             size: typeof asset?.size === 'number' ? asset.size : undefined,
             isDirectory: Boolean(asset?.isDirectory),
-            ...(asset?.meta ? { meta: { ver: String(asset.meta.ver || ''), importer: String(asset.meta.importer || '') } } : {})
+            ...(asset?.meta ? {
+                meta: {
+                    ver: String(asset.meta.ver || ''),
+                    importer: String(asset.meta.importer || '')
+                }
+            } : {})
         };
     }
 
     private async getAssetInfo(assetPath: string): Promise<ToolResponse> {
         if (!assetPath) return { success: false, error: 'Missing assetPath' };
         try {
-            const asset: any = await this.request('asset-db', 'query-asset-info', assetPath);
-            return asset ? { success: true, data: this.normalizeAsset(asset) } : { success: false, error: 'Asset not found' };
-        } catch (error: any) { return this.fail(error); }
+            const asset = await this.adapter.asset.queryAssetInfo(assetPath);
+            return asset
+                ? { success: true, data: this.normalizeAsset(asset) }
+                : { success: false, error: 'Asset not found' };
+        } catch (error: any) {
+            return this.failure(error);
+        }
     }
 
     private async getAssets(type = 'all', folder = 'db://assets'): Promise<ToolResponse> {
@@ -115,80 +143,106 @@ export class ProjectTools implements ToolExecutor {
             material: '.mtl', mesh: '.{fbx,obj,dae}', audio: '.{mp3,ogg,wav,m4a}', animation: '.{anim,clip}'
         };
         try {
-            const assets = ((await this.request('asset-db', 'query-assets', {
-                pattern: `${folder}/**/*${type !== 'all' ? extensions[type] || '' : ''}`
-            })) || []).map((asset: any) => this.normalizeAsset(asset));
+            const pattern = `${folder}/**/*${type !== 'all' ? extensions[type] || '' : ''}`;
+            const assets = (await this.adapter.asset.queryAssets(pattern) || []).map((asset) => this.normalizeAsset(asset));
             return { success: true, data: { type, folder, count: assets.length, assets } };
-        } catch (error: any) { return this.fail(error); }
+        } catch (error: any) {
+            return this.failure(error);
+        }
     }
 
     private async getBuildSettings(): Promise<ToolResponse> {
         try {
-            return { success: true, data: { ready: await this.request('builder', 'query-worker-ready') } };
-        } catch (error: any) { return this.fail(error); }
+            return { success: true, data: { ready: await this.adapter.build.queryWorkerReady() } };
+        } catch (error: any) {
+            return this.failure(error);
+        }
     }
 
     private async createAsset(url: string, content: any = null, overwrite = false): Promise<ToolResponse> {
         if (!url) return { success: false, error: 'Missing url' };
         try {
-            const result = await this.request('asset-db', 'create-asset', url, content, { overwrite, rename: !overwrite });
+            const result = await this.adapter.asset.createAsset(url, content, { overwrite, rename: !overwrite });
             return { success: true, data: result || { url } };
-        } catch (error: any) { return this.fail(error); }
+        } catch (error: any) {
+            return this.failure(error);
+        }
     }
 
-    private async copyOrMove(operation: string, source: string, target: string, overwrite = false): Promise<ToolResponse> {
+    private async copyOrMove(operation: 'copy' | 'move', source: string, target: string, overwrite = false): Promise<ToolResponse> {
         if (!source || !target) return { success: false, error: 'Missing source or target' };
         try {
-            const result = await this.request('asset-db', operation, source, target, { overwrite, rename: !overwrite });
+            const options = { overwrite, rename: !overwrite };
+            const result = operation === 'copy'
+                ? await this.adapter.asset.copyAsset(source, target, options)
+                : await this.adapter.asset.moveAsset(source, target, options);
             return { success: true, data: result || { source, target } };
-        } catch (error: any) { return this.fail(error); }
+        } catch (error: any) {
+            return this.failure(error);
+        }
     }
 
     private async deleteAsset(url: string): Promise<ToolResponse> {
         if (!url) return { success: false, error: 'Missing url' };
         try {
-            await this.request('asset-db', 'delete-asset', url);
+            await this.adapter.asset.deleteAsset(url);
             return { success: true, data: { url } };
-        } catch (error: any) { return this.fail(error); }
+        } catch (error: any) {
+            return this.failure(error);
+        }
     }
 
     private async saveAsset(url: string, content: string): Promise<ToolResponse> {
         if (!url) return { success: false, error: 'Missing url' };
         try {
-            const result = await this.request('asset-db', 'save-asset', url, content);
+            const result = await this.adapter.asset.saveAsset(url, content);
             return { success: true, data: result || { url } };
-        } catch (error: any) { return this.fail(error); }
+        } catch (error: any) {
+            return this.failure(error);
+        }
     }
 
     private async reimportAsset(url: string): Promise<ToolResponse> {
         if (!url) return { success: false, error: 'Missing url' };
         try {
-            await this.request('asset-db', 'reimport-asset', url);
+            await this.adapter.asset.reimportAsset(url);
             return { success: true, data: { url } };
-        } catch (error: any) { return this.fail(error); }
+        } catch (error: any) {
+            return this.failure(error);
+        }
     }
 
-    private async queryAsset(message: string, key: string, value: string): Promise<ToolResponse> {
-        if (!value) return { success: false, error: `Missing ${key === 'url' ? 'uuid' : 'url'}` };
+    private async queryAsset(kind: 'path' | 'uuid' | 'url', value: string): Promise<ToolResponse> {
+        if (!value) return { success: false, error: `Missing ${kind === 'url' ? 'uuid' : 'url'}` };
         try {
-            return { success: true, data: { [key === 'url' ? 'uuid' : 'url']: value, [key]: await this.request('asset-db', message, value) } };
-        } catch (error: any) { return this.fail(error); }
+            const result = kind === 'path'
+                ? await this.adapter.asset.queryPath(value)
+                : kind === 'uuid'
+                    ? await this.adapter.asset.queryUuid(value)
+                    : await this.adapter.asset.queryUrl(value);
+            return {
+                success: true,
+                data: kind === 'url' ? { uuid: value, url: result } : { url: value, [kind]: result }
+            };
+        } catch (error: any) {
+            return this.failure(error);
+        }
     }
 
     private async findAssetByName(args: any): Promise<ToolResponse> {
         if (!args.name) return { success: false, error: 'Missing name' };
         try {
-            return {
-                success: true,
-                data: await this.request('asset-db', 'query-assets', { pattern: `${args.folder || 'db://assets'}/**/${args.name}.*` }) || []
-            };
-        } catch (error: any) { return this.fail(error); }
+            const pattern = `${args.folder || 'db://assets'}/**/${args.name}.*`;
+            return { success: true, data: await this.adapter.asset.queryAssets(pattern) || [] };
+        } catch (error: any) {
+            return this.failure(error);
+        }
     }
 
     private async getAssetDetails(assetPath: string, includeSubAssets = false): Promise<ToolResponse> {
         if (!assetPath) return { success: false, error: 'Missing assetPath' };
         try {
-            const asset: any = await this.request('asset-db', 'query-asset-info', assetPath);
+            const asset = await this.adapter.asset.queryAssetInfo(assetPath);
             if (!asset) return { success: false, error: 'Asset not found' };
             return {
                 success: true,
@@ -197,6 +251,8 @@ export class ProjectTools implements ToolExecutor {
                     ...(includeSubAssets && asset.subAssets ? { subAssets: asset.subAssets } : {})
                 }
             };
-        } catch (error: any) { return this.fail(error); }
+        } catch (error: any) {
+            return this.failure(error);
+        }
     }
 }

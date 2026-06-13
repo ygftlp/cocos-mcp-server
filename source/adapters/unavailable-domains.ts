@@ -1,10 +1,17 @@
+import { AssetAdapter, AssetMutationOptions } from './contracts/asset-adapter';
+import { BuildAdapter } from './contracts/build-adapter';
 import { ComponentAdapter, SetComponentPropertyRequest } from './contracts/component-adapter';
 import { CreateNodeRequest, NodeAdapter, SetNodeParentRequest, SetNodePropertyRequest } from './contracts/node-adapter';
+import { ProjectAdapter, ProjectDescriptor } from './contracts/project-adapter';
 import { CreateSceneRequest, SceneAdapter } from './contracts/scene-adapter';
 import { UIAdapter, UIEventHandlerInput, UIEventMode } from './contracts/ui-adapter';
 
+function unavailable(domain: string): Error {
+    return new Error(`${domain} adapter is unavailable for the active Cocos Creator version`);
+}
+
 function rejected(domain: string): Promise<never> {
-    return Promise.reject(new Error(`${domain} adapter is unavailable for the active Cocos Creator version`));
+    return Promise.reject(unavailable(domain));
 }
 
 export class UnavailableNodeAdapter implements NodeAdapter {
@@ -49,4 +56,31 @@ export class UnavailableUIAdapter implements UIAdapter {
     listEvents(_nodeUuid: string, _componentType: string, _eventProperty?: string | null): Promise<any> {
         return rejected('UI');
     }
+}
+
+export class UnavailableAssetAdapter implements AssetAdapter {
+    refreshAsset(_url: string): Promise<void> { return rejected('Asset'); }
+    importAsset(_sourcePath: string, _targetUrl: string): Promise<any> { return rejected('Asset'); }
+    queryAssetInfo(_url: string): Promise<any | null> { return rejected('Asset'); }
+    queryAssets(_pattern: string): Promise<any[]> { return rejected('Asset'); }
+    createAsset(_url: string, _content: any, _options?: AssetMutationOptions): Promise<any> { return rejected('Asset'); }
+    copyAsset(_source: string, _target: string, _options?: AssetMutationOptions): Promise<any> { return rejected('Asset'); }
+    moveAsset(_source: string, _target: string, _options?: AssetMutationOptions): Promise<any> { return rejected('Asset'); }
+    deleteAsset(_url: string): Promise<void> { return rejected('Asset'); }
+    saveAsset(_url: string, _content: string): Promise<any> { return rejected('Asset'); }
+    reimportAsset(_url: string): Promise<void> { return rejected('Asset'); }
+    queryPath(_url: string): Promise<string | null> { return rejected('Asset'); }
+    queryUuid(_url: string): Promise<string | null> { return rejected('Asset'); }
+    queryUrl(_uuid: string): Promise<string | null> { return rejected('Asset'); }
+}
+
+export class UnavailableBuildAdapter implements BuildAdapter {
+    openPanel(): Promise<void> { return rejected('Build'); }
+    queryWorkerReady(): Promise<boolean> { return rejected('Build'); }
+    build(_options: Record<string, any>): Promise<any> { return rejected('Build'); }
+}
+
+export class UnavailableProjectAdapter implements ProjectAdapter {
+    describe(): ProjectDescriptor { throw unavailable('Project'); }
+    queryConfig(_name: string): Promise<any> { return rejected('Project'); }
 }

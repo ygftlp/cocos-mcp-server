@@ -1,5 +1,8 @@
+import { AssetAdapter } from './contracts/asset-adapter';
+import { BuildAdapter } from './contracts/build-adapter';
 import { ComponentAdapter } from './contracts/component-adapter';
 import { NodeAdapter } from './contracts/node-adapter';
+import { ProjectAdapter } from './contracts/project-adapter';
 import { SceneAdapter } from './contracts/scene-adapter';
 import { UIAdapter } from './contracts/ui-adapter';
 
@@ -31,6 +34,9 @@ export interface CocosAdapter {
     readonly scene: SceneAdapter;
     readonly component: ComponentAdapter;
     readonly ui: UIAdapter;
+    readonly asset: AssetAdapter;
+    readonly build: BuildAdapter;
+    readonly project: ProjectAdapter;
 
     request(channel: string, message: string, ...args: any[]): Promise<any>;
     send(channel: string, message: string, ...args: any[]): void;
