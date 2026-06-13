@@ -34,8 +34,8 @@ export class ToolRegistry {
 
         this.executors = {
             compatibility: new CompatibilityCoreTools(adapter),
-            scene: new SceneCoreTools(),
-            node: new NodeCoreTools(),
+            scene: new SceneCoreTools(adapter.scene),
+            node: new NodeCoreTools(adapter.node),
             component: new ComponentCoreTools(),
             ui: new UICoreTools(),
             prefab: new PrefabCoreTools(),
@@ -97,7 +97,6 @@ export class ToolRegistry {
         return configs;
     }
 
-    // undefined means no user filter (all compatible tools); [] means the user explicitly disabled every tool.
     public buildRuntime(enabledTools?: ToolConfig[]): { toolsList: ToolDefinition[]; toolHandlers: Map<string, ToolHandler> } {
         const toolsList: ToolDefinition[] = [];
         const toolHandlers = new Map<string, ToolHandler>();
@@ -123,7 +122,6 @@ export class ToolRegistry {
 
     private getToolDefinitionsByCategory(): Map<string, ToolDefinition[]> {
         if (this.toolDefinitionsByCategory) return this.toolDefinitionsByCategory;
-
         const definitions = new Map<string, ToolDefinition[]>();
         for (const [category, executor] of Object.entries(this.executors)) {
             definitions.set(category, executor.getTools());
@@ -150,7 +148,6 @@ export class ToolRegistry {
     public invalidateCaches(scope?: string): number {
         let cleared = 0;
         const normalized = (scope || 'all').toLowerCase();
-
         for (const [category, executor] of Object.entries(this.executors)) {
             if (!this.shouldClearCacheForScope(category, normalized)) continue;
             const candidate = executor as any;
