@@ -39,8 +39,7 @@ export class ComponentCoreTools implements ToolExecutor {
             reflection: {
                 list_classes: { executor: this.reflection, method: 'list_component_classes' },
                 schema: { executor: this.reflection, method: 'get_component_schema' },
-                validate: { executor: this.reflection, method: 'validate_component_properties' },
-                set_many: { executor: this.reflection, method: 'set_component_properties' }
+                validate: { executor: this.reflection, method: 'validate_component_properties' }
             },
             property: {
                 set: { executor: this.component, method: 'set_component_property' },
@@ -59,11 +58,14 @@ export class ComponentCoreTools implements ToolExecutor {
             {
                 name: 'reflection',
                 title: 'Reflect Cocos component classes and serialized properties',
-                description: 'List engine and project component classes, derive a live serialized property schema, validate arbitrary property paths, and apply validated multi-property updates.',
+                description: 'List engine and project component classes, derive a live serialized property schema, and validate arbitrary property paths against the current project.',
                 inputSchema: buildActionSchema(this.actions.reflection, 'Component reflection parameters'),
-                xCocos: { kind: 'read', destructive: false, sideEffect: false, cost: 'medium', scope: ['scene'] }
+                xCocos: {
+                    kind: 'read', destructive: false, sideEffect: false, cost: 'medium', scope: ['scene'],
+                    requires: ['component.read', 'scene.read']
+                }
             },
-            { name: 'property', description: 'Component property operations', inputSchema: buildActionSchema(this.actions.property, 'Component property parameters') }
+            { name: 'property', description: 'Validate, set, batch-update, or reset component properties', inputSchema: buildActionSchema(this.actions.property, 'Component property parameters') }
         ];
     }
 
