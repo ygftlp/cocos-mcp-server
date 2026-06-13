@@ -34,9 +34,9 @@ export class ToolRegistry {
 
         this.executors = {
             compatibility: new CompatibilityCoreTools(adapter),
-            scene: new SceneCoreTools(adapter.scene),
-            node: new NodeCoreTools(adapter.node),
-            component: new ComponentCoreTools(adapter.component),
+            scene: new SceneCoreTools(adapter.scene, adapter.sceneAdvanced),
+            node: new NodeCoreTools(adapter.node, adapter.sceneAdvanced),
+            component: new ComponentCoreTools(adapter.component, adapter.sceneAdvanced),
             ui: new UICoreTools(),
             prefab: new PrefabCoreTools(adapter),
             asset: new AssetCoreTools(adapter),
