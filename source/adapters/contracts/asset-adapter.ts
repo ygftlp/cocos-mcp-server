@@ -6,7 +6,7 @@ export interface AssetMutationOptions {
 /** Version-specific bridge for the Cocos Asset Database. */
 export interface AssetAdapter {
     refreshAsset(url: string): Promise<void>;
-    importAsset(sourcePath: string, targetUrl: string): Promise<any>;
+    importAsset(sourcePath: string, targetUrl: string, options?: AssetMutationOptions): Promise<any>;
     queryAssetInfo(url: string): Promise<any | null>;
     queryAssets(pattern: string): Promise<any[]>;
     createAsset(url: string, content: any, options?: AssetMutationOptions): Promise<any>;
@@ -14,6 +14,11 @@ export interface AssetAdapter {
     moveAsset(source: string, target: string, options?: AssetMutationOptions): Promise<any>;
     deleteAsset(url: string): Promise<void>;
     saveAsset(url: string, content: string): Promise<any>;
+    readAsset(url: string): Promise<string>;
+    saveAssetMeta(urlOrUuid: string, content: string): Promise<any>;
+    generateAvailableUrl(url: string): Promise<string>;
+    queryReady(): Promise<boolean>;
+    openAsset(urlOrUuid: string): Promise<void>;
     reimportAsset(url: string): Promise<void>;
     queryPath(url: string): Promise<string | null>;
     queryUuid(url: string): Promise<string | null>;

@@ -5,8 +5,8 @@ export class Creator38xAssetAdapter implements AssetAdapter {
         await (Editor.Message.request as any)('asset-db', 'refresh-asset', url);
     }
 
-    importAsset(sourcePath: string, targetUrl: string): Promise<any> {
-        return (Editor.Message.request as any)('asset-db', 'import-asset', sourcePath, targetUrl);
+    importAsset(sourcePath: string, targetUrl: string, options: AssetMutationOptions = {}): Promise<any> {
+        return (Editor.Message.request as any)('asset-db', 'import-asset', sourcePath, targetUrl, options);
     }
 
     queryAssetInfo(url: string): Promise<any | null> {
@@ -35,6 +35,26 @@ export class Creator38xAssetAdapter implements AssetAdapter {
 
     saveAsset(url: string, content: string): Promise<any> {
         return (Editor.Message.request as any)('asset-db', 'save-asset', url, content);
+    }
+
+    readAsset(url: string): Promise<string> {
+        return (Editor.Message.request as any)('asset-db', 'read-asset', url);
+    }
+
+    saveAssetMeta(urlOrUuid: string, content: string): Promise<any> {
+        return (Editor.Message.request as any)('asset-db', 'save-asset-meta', urlOrUuid, content);
+    }
+
+    generateAvailableUrl(url: string): Promise<string> {
+        return (Editor.Message.request as any)('asset-db', 'generate-available-url', url);
+    }
+
+    async queryReady(): Promise<boolean> {
+        return Boolean(await (Editor.Message.request as any)('asset-db', 'query-ready'));
+    }
+
+    async openAsset(urlOrUuid: string): Promise<void> {
+        await (Editor.Message.request as any)('asset-db', 'open-asset', urlOrUuid);
     }
 
     async reimportAsset(url: string): Promise<void> {

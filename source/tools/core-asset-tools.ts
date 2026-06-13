@@ -7,11 +7,12 @@ import { buildActionSchema, executeAction, ToolActionMap } from './core-action-u
 
 export class AssetCoreTools implements ToolExecutor {
     private readonly project: ProjectTools;
-    private readonly advanced = new AssetAdvancedTools();
+    private readonly advanced: AssetAdvancedTools;
     private readonly actions: ToolActionMap;
 
     constructor(adapter: CocosAdapter = selectCocosAdapter()) {
         this.project = new ProjectTools(adapter);
+        this.advanced = new AssetAdvancedTools(adapter);
         this.actions = {
             manage: {
                 import: { executor: this.project, method: 'import_asset' },
