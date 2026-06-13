@@ -1,4 +1,6 @@
-// Central registry for v1.5 core tool categories and runtime wiring.
+// Central registry for MCP tool categories, version adapters, and runtime wiring.
+import { CocosAdapter, CocosCompatibilityReport, capabilityEnabled } from '../adapters/contracts';
+import { selectCocosAdapter } from '../adapters/selector';
 import { ToolDefinition, ToolExecutor, ToolConfig, ToolMeta } from '../types';
 import { SceneCoreTools } from './core-scene-tools';
 import { NodeCoreTools } from './core-node-tools';
@@ -13,6 +15,7 @@ import { ReferenceImageCoreTools } from './core-reference-image-tools';
 import { SceneViewCoreTools } from './core-scene-view-tools';
 import { ValidationCoreTools } from './core-validation-tools';
 import { UICoreTools } from './core-ui-tools';
+import { CompatibilityCoreTools } from './core-compatibility-tools';
 import { ServerTools } from './server-tools';
 
 export type ToolHandler = { executor: ToolExecutor; method: string };
@@ -23,13 +26,14 @@ export class ToolRegistry {
     private toolDefinitionsByCategory: Map<string, ToolDefinition[]> | null = null;
     private toolCallExecutor: ToolCallExecutor | null = null;
 
-    constructor() {
+    constructor(private readonly adapter: CocosAdapter = selectCocosAdapter()) {
         const serverTools = new ServerTools({
             executeToolCall: (name, args) => this.executeToolCall(name, args),
             invalidateCaches: (scope) => this.invalidateCaches(scope)
         });
 
         this.executors = {
+            compatibility: new CompatibilityCoreTools(adapter),
             scene: new SceneCoreTools(),
             node: new NodeCoreTools(),
             component: new ComponentCoreTools(),
@@ -50,10 +54,38 @@ export class ToolRegistry {
         return this.executors;
     }
 
+    public getAdapter(): CocosAdapter {
+        return this.adapter;
+    }
+
+    public getCompatibilityReport(): CocosCompatibilityReport {
+        const disabledTools: Array<{ name: string; missingCapabilities: string[] }> = [];
+        let availableToolCount = 0;
+
+        for (const [category, tools] of this.getToolDefinitionsByCategory()) {
+            for (const tool of tools) {
+                const missingCapabilities = this.getMissingCapabilities(category, tool);
+                if (missingCapabilities.length) {
+                    disabledTools.push({ name: `${category}_${tool.name}`, missingCapabilities });
+                } else {
+                    availableToolCount++;
+                }
+            }
+        }
+
+        return {
+            ...this.adapter.profile,
+            availableToolCount,
+            disabledToolCount: disabledTools.length,
+            disabledTools
+        };
+    }
+
     public listToolConfigs(): ToolConfig[] {
         const configs: ToolConfig[] = [];
         for (const [category, tools] of this.getToolDefinitionsByCategory()) {
             for (const tool of tools) {
+                if (this.getMissingCapabilities(category, tool).length) continue;
                 configs.push({
                     category,
                     name: tool.name,
@@ -65,7 +97,7 @@ export class ToolRegistry {
         return configs;
     }
 
-    // undefined means no user filter (all tools); [] means the user explicitly disabled every tool.
+    // undefined means no user filter (all compatible tools); [] means the user explicitly disabled every tool.
     public buildRuntime(enabledTools?: ToolConfig[]): { toolsList: ToolDefinition[]; toolHandlers: Map<string, ToolHandler> } {
         const toolsList: ToolDefinition[] = [];
         const toolHandlers = new Map<string, ToolHandler>();
@@ -78,12 +110,10 @@ export class ToolRegistry {
             for (const tool of tools) {
                 const fullName = `${category}_${tool.name}`;
                 if (enabledSet !== null && !enabledSet.has(fullName)) continue;
+                if (this.getMissingCapabilities(category, tool).length) continue;
 
-                toolsList.push({
-                    ...tool,
-                    name: fullName,
-                    xCocos: tool.xCocos ?? this.buildToolMeta(category, tool.name)
-                });
+                const meta = tool.xCocos ?? this.buildToolMeta(category, tool.name);
+                toolsList.push({ ...tool, name: fullName, xCocos: meta });
                 toolHandlers.set(fullName, { executor, method: tool.name });
             }
         }
@@ -100,6 +130,12 @@ export class ToolRegistry {
         }
         this.toolDefinitionsByCategory = definitions;
         return definitions;
+    }
+
+    private getMissingCapabilities(category: string, tool: ToolDefinition): string[] {
+        const meta = tool.xCocos ?? this.buildToolMeta(category, tool.name);
+        const required = meta.requires?.length ? meta.requires : [`${category}.${meta.kind}`];
+        return required.filter((capability) => !capabilityEnabled(this.adapter.profile, capability));
     }
 
     public setToolCallExecutor(executor: ToolCallExecutor): void {
@@ -159,7 +195,7 @@ export class ToolRegistry {
         let scope: string[];
         if (['scene', 'node', 'component', 'ui', 'prefab', 'sceneView', 'referenceImage'].includes(category)) scope = ['scene'];
         else if (['project', 'asset', 'preferences'].includes(category)) scope = ['project', 'assets'];
-        else if (['server', 'debug'].includes(category)) scope = ['system'];
+        else if (['server', 'debug', 'compatibility'].includes(category)) scope = ['system'];
         else scope = ['general'];
 
         return {

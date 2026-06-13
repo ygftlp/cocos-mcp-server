@@ -40,7 +40,10 @@ export class ProjectCoreTools implements ToolExecutor {
                     },
                     additionalProperties: false
                 },
-                xCocos: { kind: 'write', destructive: false, sideEffect: true, cost: 'medium', scope: ['project', 'assets'] }
+                xCocos: {
+                    kind: 'write', destructive: false, sideEffect: true, cost: 'medium', scope: ['project', 'assets'],
+                    requires: ['project.write', 'asset.write']
+                }
             },
             {
                 name: 'create_game',
@@ -63,56 +66,42 @@ export class ProjectCoreTools implements ToolExecutor {
                             properties: {
                                 entryComponent: { type: 'string' },
                                 files: {
-                                    type: 'array',
-                                    maxItems: 100,
+                                    type: 'array', maxItems: 100,
                                     items: {
                                         type: 'object',
-                                        properties: {
-                                            path: { type: 'string' },
-                                            content: { type: 'string' }
-                                        },
-                                        required: ['path', 'content'],
-                                        additionalProperties: false
+                                        properties: { path: { type: 'string' }, content: { type: 'string' } },
+                                        required: ['path', 'content'], additionalProperties: false
                                     }
                                 },
                                 nodes: {
-                                    type: 'array',
-                                    minItems: 1,
-                                    maxItems: 500,
+                                    type: 'array', minItems: 1, maxItems: 500,
                                     items: {
                                         type: 'object',
                                         properties: {
-                                            id: { type: 'string' },
-                                            name: { type: 'string' },
-                                            parentId: { type: 'string' },
-                                            position: { type: 'object' },
-                                            rotation: { type: 'object' },
-                                            scale: { type: 'object' },
+                                            id: { type: 'string' }, name: { type: 'string' }, parentId: { type: 'string' },
+                                            position: { type: 'object' }, rotation: { type: 'object' }, scale: { type: 'object' },
                                             components: {
                                                 type: 'array',
                                                 items: {
                                                     type: 'object',
-                                                    properties: {
-                                                        type: { type: 'string' },
-                                                        properties: { type: 'object' }
-                                                    },
-                                                    required: ['type'],
-                                                    additionalProperties: false
+                                                    properties: { type: { type: 'string' }, properties: { type: 'object' } },
+                                                    required: ['type'], additionalProperties: false
                                                 }
                                             }
                                         },
-                                        required: ['id', 'name'],
-                                        additionalProperties: false
+                                        required: ['id', 'name'], additionalProperties: false
                                     }
                                 }
                             },
-                            required: ['nodes'],
-                            additionalProperties: false
+                            required: ['nodes'], additionalProperties: false
                         }
                     },
                     additionalProperties: false
                 },
-                xCocos: { kind: 'write', destructive: false, sideEffect: true, cost: 'high', scope: ['project', 'assets', 'scene'] }
+                xCocos: {
+                    kind: 'write', destructive: false, sideEffect: true, cost: 'high', scope: ['project', 'assets', 'scene'],
+                    requires: ['project.write', 'asset.write', 'scene.write', 'node.write', 'component.write', 'ui.write']
+                }
             },
             {
                 name: 'build',
@@ -134,7 +123,10 @@ export class ProjectCoreTools implements ToolExecutor {
                     },
                     additionalProperties: false
                 },
-                xCocos: { kind: 'write', destructive: false, sideEffect: true, cost: 'high', scope: ['project'] }
+                xCocos: {
+                    kind: 'write', destructive: false, sideEffect: true, cost: 'high', scope: ['project'],
+                    requires: ['project.build']
+                }
             },
             {
                 name: 'build_system',

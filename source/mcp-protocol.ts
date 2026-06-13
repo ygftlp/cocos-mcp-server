@@ -9,7 +9,8 @@ export class MCPProtocolEngine {
     constructor(
         private readonly getTools: () => ToolDefinition[],
         private readonly executeTool: ToolCallExecutor,
-        private readonly serverVersion: string = '1.4.0'
+        private readonly serverVersion: string = '1.4.0',
+        private readonly getCompatibility?: () => any
     ) {}
 
     async handlePayload(payload: any): Promise<any | null> {
@@ -84,7 +85,27 @@ export class MCPProtocolEngine {
                     break;
                 }
                 case 'resources/list':
-                    result = { resources: [] };
+                    result = {
+                        resources: this.getCompatibility ? [{
+                            uri: 'cocos://compatibility',
+                            name: 'Cocos Creator compatibility profile',
+                            title: 'Cocos Creator adapter and capability report',
+                            description: 'Selected version adapter, support level, capability map, and tools disabled by compatibility policy.',
+                            mimeType: 'application/json'
+                        }] : []
+                    };
+                    break;
+                case 'resources/read':
+                    if (!params || params.uri !== 'cocos://compatibility' || !this.getCompatibility) {
+                        return notification ? null : this.methodNotFound(id, `resource:${params?.uri || ''}`);
+                    }
+                    result = {
+                        contents: [{
+                            uri: 'cocos://compatibility',
+                            mimeType: 'application/json',
+                            text: JSON.stringify(this.getCompatibility(), null, 2)
+                        }]
+                    };
                     break;
                 case 'prompts/list':
                     result = { prompts: [] };
@@ -108,15 +129,21 @@ export class MCPProtocolEngine {
         const protocolVersion = SUPPORTED_PROTOCOL_VERSIONS.includes(requested)
             ? requested
             : LATEST_PROTOCOL_VERSION;
+        const compatibility = this.getCompatibility?.();
         return {
             protocolVersion,
-            capabilities: { tools: { listChanged: false } },
+            capabilities: {
+                tools: { listChanged: false },
+                ...(this.getCompatibility ? { resources: { subscribe: false, listChanged: false } } : {})
+            },
             serverInfo: {
                 name: 'cocos-mcp-server',
                 title: 'Cocos Creator MCP Server',
                 version: this.serverVersion
             },
-            instructions: 'Use project_quick_start to scaffold a Cocos project, scene/node/component tools to assemble gameplay, and project_build to build it.'
+            instructions: compatibility
+                ? `Read cocos://compatibility or call compatibility_info before planning editor changes. Active adapter: ${compatibility.adapterId}; support level: ${compatibility.supportLevel}.`
+                : 'Use project_quick_start to scaffold a Cocos project, scene/node/component tools to assemble gameplay, and project_build to build it.'
         };
     }
 
@@ -142,7 +169,16 @@ export class MCPProtocolEngine {
     }
 
     private normalizeToolResult(toolName: string, raw: any, durationMs: number): any {
-        const meta = { tool: toolName, durationMs, timestamp: new Date().toISOString() };
+        const compatibility = this.getCompatibility?.();
+        const meta = {
+            tool: toolName,
+            durationMs,
+            timestamp: new Date().toISOString(),
+            ...(compatibility ? {
+                adapterId: compatibility.adapterId,
+                creatorVersion: compatibility.creatorVersion
+            } : {})
+        };
         if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
             const result: any = { ...raw };
             const success = typeof result.success === 'boolean' ? result.success : undefined;
