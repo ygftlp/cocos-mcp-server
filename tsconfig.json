@@ -5,7 +5,12 @@
         "rootDir": "./source",
         "types": [
             "node",
-            "@cocos/creator-types/editor",
+            "@cocos/creator-types/editor"
         ]
-    }
+    },
+    "exclude": [
+        "source/test/**/*",
+        "dist/**/*",
+        "node_modules/**/*"
+    ]
 }

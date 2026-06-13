@@ -12,6 +12,7 @@ import { ServerCoreTools } from './core-server-tools';
 import { ReferenceImageCoreTools } from './core-reference-image-tools';
 import { SceneViewCoreTools } from './core-scene-view-tools';
 import { ValidationCoreTools } from './core-validation-tools';
+import { UICoreTools } from './core-ui-tools';
 import { ServerTools } from './server-tools';
 
 export type ToolHandler = { executor: ToolExecutor; method: string };
@@ -32,6 +33,7 @@ export class ToolRegistry {
             scene: new SceneCoreTools(),
             node: new NodeCoreTools(),
             component: new ComponentCoreTools(),
+            ui: new UICoreTools(),
             prefab: new PrefabCoreTools(),
             asset: new AssetCoreTools(),
             project: new ProjectCoreTools(),
@@ -127,7 +129,7 @@ export class ToolRegistry {
     private shouldClearCacheForScope(category: string, scope: string): boolean {
         if (scope === 'all') return true;
         if (scope === 'nodes' || scope === 'scene') {
-            return category === 'node' || category === 'scene' || category === 'prefab';
+            return category === 'node' || category === 'scene' || category === 'ui' || category === 'prefab';
         }
         if (scope === 'assets' || scope === 'project') {
             return category === 'project' || category === 'asset' || category === 'prefab';
@@ -140,8 +142,8 @@ export class ToolRegistry {
         const full = `${category}_${name}`;
         const readVerbs = ['get', 'list', 'query', 'find', 'check', 'validate', 'analyze', 'detect'];
         const writeVerbs = ['set', 'update', 'create', 'delete', 'remove', 'add', 'attach', 'move', 'copy', 'import', 'reimport', 'save', 'apply', 'reset', 'start', 'stop', 'build', 'run', 'open'];
-        const readHints = ['info', 'status', 'hierarchy', 'browse', 'logs', 'log', 'view'];
-        const writeHints = ['manage', 'lifecycle', 'transform', 'operations', 'system', 'snapshot', 'undo', 'batch', 'clipboard', 'edit', 'manifest', 'property', 'control'];
+        const readHints = ['info', 'status', 'hierarchy', 'browse', 'logs', 'log', 'view', 'catalog'];
+        const writeHints = ['manage', 'lifecycle', 'transform', 'operations', 'system', 'snapshot', 'undo', 'batch', 'clipboard', 'edit', 'manifest', 'property', 'control', 'element', 'event'];
         const destructiveVerbs = ['delete', 'remove', 'move', 'reimport', 'reset'];
 
         const isRead = readVerbs.some((verb) => name.startsWith(verb) || name.includes(`_${verb}`) || full.includes(verb))
@@ -152,10 +154,10 @@ export class ToolRegistry {
 
         let cost: ToolMeta['cost'] = 'medium';
         if (name.includes('build') || name.includes('analyze') || name.includes('validate') || name.includes('optimize')) cost = 'high';
-        else if (name.includes('query') || name.includes('get') || name.includes('find')) cost = 'low';
+        else if (name.includes('query') || name.includes('get') || name.includes('find') || name.includes('catalog')) cost = 'low';
 
         let scope: string[];
-        if (['scene', 'node', 'component', 'prefab', 'sceneView', 'referenceImage'].includes(category)) scope = ['scene'];
+        if (['scene', 'node', 'component', 'ui', 'prefab', 'sceneView', 'referenceImage'].includes(category)) scope = ['scene'];
         else if (['project', 'asset', 'preferences'].includes(category)) scope = ['project', 'assets'];
         else if (['server', 'debug'].includes(category)) scope = ['system'];
         else scope = ['general'];
