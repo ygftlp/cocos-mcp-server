@@ -23,7 +23,8 @@ export class MCPServer {
         this.protocol = new MCPProtocolEngine(
             () => this.toolsList,
             (name, args) => this.executeToolCall(name, args),
-            '1.4.0'
+            '1.4.0',
+            () => this.registry.getCompatibilityReport()
         );
     }
 
@@ -36,7 +37,9 @@ export class MCPServer {
             this.httpServer!.once('error', reject);
         });
         this.setupTools();
+        const compatibility = this.registry.getCompatibilityReport();
         console.log(`[MCPServer] HTTP server: http://${bindAddress}:${this.settings.port}/mcp`);
+        console.log(`[MCPServer] Cocos adapter: ${compatibility.adapterId} (${compatibility.supportLevel}) for ${compatibility.creatorVersion}`);
     }
 
     async stop(): Promise<void> {
@@ -64,9 +67,10 @@ export class MCPServer {
     getClients(): MCPClient[] { return Array.from(this.clients.values()); }
     getAvailableTools(): ToolDefinition[] { return this.toolsList; }
     getSettings(): MCPServerSettings { return this.settings; }
+    getCompatibilityReport(): any { return this.registry.getCompatibilityReport(); }
 
     getFilteredTools(enabledTools: any[]): ToolDefinition[] {
-        if (!enabledTools?.length) return this.toolsList;
+        if (!Array.isArray(enabledTools)) return this.toolsList;
         const names = new Set(enabledTools.map((tool) => `${tool.category}_${tool.name}`));
         return this.toolsList.filter((tool) => names.has(tool.name));
     }
@@ -78,7 +82,7 @@ export class MCPServer {
 
     async executeToolCall(toolName: string, args: any): Promise<any> {
         const handler = this.toolHandlers.get(toolName);
-        if (!handler) throw new Error(`Tool ${toolName} not found or disabled`);
+        if (!handler) throw new Error(`Tool ${toolName} not found, disabled, or unsupported by the active Cocos adapter`);
         return handler.executor.execute(handler.method, args || {});
     }
 
@@ -96,9 +100,11 @@ export class MCPServer {
 
         if (pathname === '/health' && req.method === 'GET') {
             return this.sendJson(res, 200, {
-                status: 'ok', tools: this.toolsList.length,
+                status: 'ok',
+                tools: this.toolsList.length,
                 protocolVersion: LATEST_PROTOCOL_VERSION,
-                supportedProtocolVersions: SUPPORTED_PROTOCOL_VERSIONS
+                supportedProtocolVersions: SUPPORTED_PROTOCOL_VERSIONS,
+                compatibility: this.registry.getCompatibilityReport()
             });
         }
         if (!this.isAuthorized(req)) {
@@ -122,6 +128,9 @@ export class MCPServer {
         try {
             if (pathname === '/mcp') return await this.handleMcp(req, res);
             if (pathname === '/manifest' && req.method === 'GET') return this.sendJson(res, 200, this.manifest());
+            if (pathname === '/capabilities' && req.method === 'GET') {
+                return this.sendJson(res, 200, this.registry.getCompatibilityReport());
+            }
 
             const provider = this.resolveProvider(pathname);
             if (provider && req.method === 'GET') {
@@ -190,8 +199,16 @@ export class MCPServer {
     private manifest(): any {
         const base = `http://127.0.0.1:${this.settings.port}`;
         return {
-            name: 'cocos-mcp-server', version: '1.4.0',
-            mcp: { transport: 'streamable-http', endpoint: `${base}/mcp`, protocolVersions: SUPPORTED_PROTOCOL_VERSIONS },
+            name: 'cocos-mcp-server',
+            version: '1.4.0',
+            mcp: {
+                transport: 'streamable-http',
+                endpoint: `${base}/mcp`,
+                protocolVersions: SUPPORTED_PROTOCOL_VERSIONS,
+                resources: ['cocos://compatibility']
+            },
+            cocos: this.registry.getCompatibilityReport(),
+            capabilitiesEndpoint: `${base}/capabilities`,
             toolFormats: {
                 openaiResponses: `${base}/v1/tools/openai/responses`,
                 openaiChatCompletions: `${base}/v1/tools/openai/chat`,
@@ -219,7 +236,15 @@ export class MCPServer {
             const parts = tool.name.split('_');
             const category = parts.shift() || '';
             const toolName = parts.join('_');
-            return { name: tool.name, category, toolName, description: tool.description, inputSchema: tool.inputSchema, apiPath: `/api/${category}/${toolName}`, xCocos: tool.xCocos };
+            return {
+                name: tool.name,
+                category,
+                toolName,
+                description: tool.description,
+                inputSchema: tool.inputSchema,
+                apiPath: `/api/${category}/${toolName}`,
+                xCocos: tool.xCocos
+            };
         });
         return this.simplifiedToolsCache;
     }
@@ -231,7 +256,11 @@ export class MCPServer {
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, MCP-Protocol-Version, Mcp-Session-Id, Last-Event-ID');
         res.setHeader('Access-Control-Expose-Headers', 'MCP-Protocol-Version, Mcp-Session-Id');
         if (allowed.includes('*')) { res.setHeader('Access-Control-Allow-Origin', '*'); return true; }
-        if (origin && allowed.includes(origin)) { res.setHeader('Access-Control-Allow-Origin', origin); res.setHeader('Vary', 'Origin'); return true; }
+        if (origin && allowed.includes(origin)) {
+            res.setHeader('Access-Control-Allow-Origin', origin);
+            res.setHeader('Vary', 'Origin');
+            return true;
+        }
         return !origin;
     }
 
