@@ -18,6 +18,7 @@ const uuid = object({ uuid: text('Node or asset UUID') }, ['uuid']);
 const nodeUuid = object({ nodeUuid: text('Node UUID') }, ['nodeUuid']);
 const prefabPath = object({ prefabPath: text('Prefab db:// URL') }, ['prefabPath']);
 const assetUrl = object({ url: text('Asset db:// URL') }, ['url']);
+const reflectedProperties = object({}, [], true);
 
 export const METHOD_PARAM_SCHEMAS: Record<string, JsonSchema> = {
     get_current_scene: empty,
@@ -29,11 +30,11 @@ export const METHOD_PARAM_SCHEMAS: Record<string, JsonSchema> = {
     get_scene_hierarchy: object({ includeComponents: flag('Include component summaries') }),
     query_scene_ready: empty,
     query_scene_dirty: empty,
-    query_scene_classes: empty,
+    query_scene_classes: object({ extends: text('Optional base class') }),
     query_scene_components: empty,
     scene_snapshot_abort: empty,
-    end_undo_recording: empty,
-    cancel_undo_recording: empty,
+    end_undo_recording: object({ undoId: text('Undo recording ID') }, ['undoId']),
+    cancel_undo_recording: object({ undoId: text('Undo recording ID') }, ['undoId']),
     soft_reload_scene: empty,
 
     get_node_info: uuid,
@@ -55,22 +56,49 @@ export const METHOD_PARAM_SCHEMAS: Record<string, JsonSchema> = {
     query_nodes_by_asset_uuid: object({ assetUuid: text('Asset UUID') }, ['assetUuid']),
     copy_node: object({ uuids: strings('Node UUIDs') }, ['uuids']),
     cut_node: object({ uuids: strings('Node UUIDs') }, ['uuids']),
-    paste_node: object({ parentUuid: text('Optional target parent UUID') }),
+    paste_node: object({ target: text('Target parent UUID'), uuids: strings('Optional node UUIDs'), keepWorldTransform: flag('Preserve world transform') }, ['target']),
     reset_node_property: object({ uuid: text('Node UUID'), path: text('Property path') }, ['uuid', 'path']),
     reset_node_transform: uuid,
 
     add_component: object({ nodeUuid: text('Node UUID'), componentType: text('Cocos component class name') }, ['nodeUuid', 'componentType']),
     remove_component: object({ nodeUuid: text('Node UUID'), componentType: text('Cocos component class name') }, ['nodeUuid', 'componentType']),
     get_available_components: object({ category: text('Component category') }),
-    attach_script: object({ nodeUuid: text('Node UUID'), scriptPath: text('Project script path') }, ['nodeUid', 'scriptPath']),
-    query_component_has_script: nodeUuid,
+    attach_script: object({ nodeUuid: text('Node UUID'), scriptPath: text('Project script path') }, ['nodeUuid', 'scriptPath']),
+    query_component_has_script: object({ className: text('Component class name') }, ['className']),
     get_components: nodeUuid,
-    get_component_info: object({ nodeUuid: text('Node UUID'), componentType: text('Component class name') }, ['nrodeUuid', 'componentType']),
+    get_component_info: object({ nodeUuid: text('Node UUID'), componentType: text('Component class name') }, ['nodeUuid', 'componentType']),
     set_component_property: object({
         nodeUuid: text('Node UUID'), componentType: text('Component class name'), property: text('Property name'),
         propertyType: text('Serialization type'), value: {}
     }, ['nodeUuid', 'componentType', 'property', 'value']),
-    reset_component: object({ nodeUuid: text('Node UUID'), componentType: text('Component class name') }, ['nodeUuid', 'componentType']),
+    reset_component: object({ uuid: text('Component UUID') }, ['uuid']),
+    list_component_classes: object({
+        filter: text('Optional class-name filter'),
+        maxResults: integer('Maximum returned classes'),
+        includeBuiltin: flag('Include engine components'),
+        includeProject: flag('Include project-defined components'),
+        includeScriptStatus: flag('Query script status for up to 100 results')
+    }),
+    get_component_schema: object({
+        nodeUuid: text('Node UUID containing the component'),
+        componentType: text('Component class name'),
+        includeHidden: flag('Include hidden serialized properties'),
+        includeValues: flag('Include current serialized values'),
+        maxDepth: integer('Maximum nested schema depth')
+    }, ['nodeUuid', 'componentType']),
+    validate_component_properties: object({
+        nodeUuid: text('Node UUID containing the component'),
+        componentType: text('Component class name'),
+        properties: reflectedProperties,
+        allowUnknown: flag('Allow property paths absent from the live serialized dump')
+    }, ['nodeUuid', 'componentType', 'properties']),
+    set_component_properties: object({
+        nodeUuid: text('Node UUID containing the component'),
+        componentType: text('Component class name'),
+        properties: reflectedProperties,
+        allowUnknown: flag('Allow property paths absent from the live serialized dump'),
+        dryRun: flag('Validate and return planned dumps without writing')
+    }, ['nodeUuid', 'componentType', 'properties']),
 
     get_prefab_list: object({ folder: text('Search folder', { default: 'db://assets' }) }),
     get_prefab_info: prefabPath,
