@@ -4,6 +4,7 @@ import { Creator39xAdapter } from './creator-39x';
 import { UnsupportedCocosAdapter } from './unsupported';
 
 export function detectCocosCreatorVersion(): string {
+    if (typeof Editor === 'undefined') return 'unknown';
     const editor = Editor as any;
     const candidates = [
         editor?.versions?.creator,
