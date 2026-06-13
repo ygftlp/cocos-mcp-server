@@ -1,5 +1,7 @@
+import { ComponentAdapter, SetComponentPropertyRequest } from './contracts/component-adapter';
 import { CreateNodeRequest, NodeAdapter, SetNodeParentRequest, SetNodePropertyRequest } from './contracts/node-adapter';
 import { CreateSceneRequest, SceneAdapter } from './contracts/scene-adapter';
+import { UIAdapter, UIEventHandlerInput, UIEventMode } from './contracts/ui-adapter';
 
 function rejected(domain: string): Promise<never> {
     return Promise.reject(new Error(`${domain} adapter is unavailable for the active Cocos Creator version`));
@@ -26,4 +28,25 @@ export class UnavailableSceneAdapter implements SceneAdapter {
     createScene(_request: CreateSceneRequest): Promise<any> { return rejected('Scene'); }
     openSaveAsDialog(): Promise<void> { return rejected('Scene'); }
     closeScene(): Promise<void> { return rejected('Scene'); }
+}
+
+export class UnavailableComponentAdapter implements ComponentAdapter {
+    createComponent(_nodeUuid: string, _componentType: string): Promise<void> { return rejected('Component'); }
+    removeComponent(_nodeUuid: string, _componentType: string): Promise<void> { return rejected('Component'); }
+    queryNode(_nodeUuid: string): Promise<any> { return rejected('Component'); }
+    setSerializedProperty(_request: SetComponentPropertyRequest): Promise<void> { return rejected('Component'); }
+}
+
+export class UnavailableUIAdapter implements UIAdapter {
+    configureEvent(
+        _nodeUuid: string,
+        _componentType: string,
+        _eventProperty: string,
+        _handlers: UIEventHandlerInput[],
+        _mode: UIEventMode
+    ): Promise<any> { return rejected('UI'); }
+
+    listEvents(_nodeUuid: string, _componentType: string, _eventProperty?: string | null): Promise<any> {
+        return rejected('UI');
+    }
 }
