@@ -7,7 +7,7 @@ export class Creator38xProjectAdapter implements ProjectAdapter {
             path: Editor.Project.path,
             uuid: Editor.Project.uuid,
             version: (Editor.Project as any).version || '1.0.0',
-            creatorVersion: (Editor as any).versions?.creator || (Editor as any).versions?.cocos || 'Unknown'
+            cocosVersion: (Editor as any).versions?.creator || (Editor as any).versions?.cocos || 'Unknown'
         };
     }
 
